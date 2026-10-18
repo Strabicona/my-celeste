@@ -172,7 +172,9 @@ const CloudIntro: Component<
 
 			const game = await gameInfo();
 			const local = await localGameVersion();
-			if (initialHasContent && initialIsPatched && (!game || local === game.version)) {
+			// only reuse this browser's files if they match the online copy;
+			// with no online copy at all, first-time setup runs again
+			if (initialHasContent && initialIsPatched && game && local === game.version) {
 				startSaveSync();
 				this["on:next"]("done");
 				return;

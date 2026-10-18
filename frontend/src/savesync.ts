@@ -1,29 +1,16 @@
 // Keeps the game's save folder (Celeste/Saves in browser storage) in step with
-// the "saves" folder in Google Drive.
+// the site's cloud storage.
 //
-// - Before the game starts, pullSaves() brings the Drive saves into the browser.
-//   If a save in the browser is newer than Drive's copy (it was written after
-//   the Google sign-in ran out, for example), the browser copy wins and is sent
-//   up instead.
-// - While the page is open, every changed save is sent to Drive a few seconds
-//   after the game finishes writing it. Before a Drive save is overwritten, its
-//   previous version is copied to "save-backups"; only the newest 3 backups per
-//   save file are kept (older ones go to the Drive bin).
+// - Before the game starts, pullSaves() brings the cloud saves into the browser.
+//   If a save in the browser is newer than the cloud copy, the browser copy wins
+//   and is sent up instead.
+// - While the page is open, every changed save is sent up a few seconds after
+//   the game finishes writing it. The server keeps the previous version as a
+//   backup, and only the newest 3 backups per save file.
 import { rootFolder } from "./fs";
-import {
-	copyFile,
-	downloadFile,
-	DriveAuthError,
-	DriveFile,
-	driveState,
-	getFolders,
-	listFiles,
-	trashFile,
-	uploadSmall,
-} from "./drive";
+import { cloudState, getSave, listSaves, LockedError, putSave } from "./cloud";
 
 const SAVES_PATH = ["Celeste", "Saves"];
-const KEEP_BACKUPS = 3;
 const POLL_MS = 2000;
 
 // Vanilla save files only: numbered slots, settings, and the debug slot.
@@ -41,11 +28,10 @@ async function savesDir(): Promise<FileSystemDirectoryHandle> {
 }
 
 type Seen = { size: number; lastModified: number };
-// what the browser file looked like when it last matched Drive
+// what the browser file looked like when it last matched the cloud
 const synced = new Map<string, Seen>();
 // last observation, used to wait until the game has finished writing
 const lastSeen = new Map<string, Seen>();
-const driveIds = new Map<string, string>();
 
 async function readLocal(): Promise<Map<string, File>> {
 	const out = new Map<string, File>();
@@ -65,66 +51,45 @@ function same(a: Seen | undefined, b: Seen) {
 	return !!a && a.size === b.size && a.lastModified === b.lastModified;
 }
 
-export async function hasDriveSaves(): Promise<boolean> {
-	const f = await getFolders();
-	const files = await listFiles(f.saves);
-	return files.some((x) => isSyncedSave(x.name));
+function equalBytes(a: Uint8Array, b: Uint8Array) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+export async function hasCloudSaves(): Promise<boolean> {
+	return (await listSaves()).some((x) => isSyncedSave(x.name));
 }
 
 export async function pullSaves(): Promise<void> {
-	const f = await getFolders();
-	const remote = (await listFiles(f.saves)).filter((x) => isSyncedSave(x.name));
+	const remote = (await listSaves()).filter((x) => isSyncedSave(x.name));
 	const local = await readLocal();
 	const dir = await savesDir();
 
 	for (const r of remote) {
-		driveIds.set(r.name, r.id);
 		const l = local.get(r.name);
-		const remoteTime = Date.parse(r.modifiedTime);
-		if (l && l.lastModified > remoteTime) {
-			const [lt, rt] = await Promise.all([
-				l.text(),
-				downloadFile(r.id).then((x) => x.text()),
+		if (l && l.lastModified > r.modified) {
+			const [lb, rb] = await Promise.all([
+				l.arrayBuffer().then((x) => new Uint8Array(x)),
+				getSave(r.name),
 			]);
-			if (lt !== rt) {
+			if (!equalBytes(lb, rb)) {
 				console.log(`[saves] keeping newer browser copy of ${r.name}`);
 				continue; // left unsynced on purpose: the sync loop uploads it
 			}
 			synced.set(r.name, { size: l.size, lastModified: l.lastModified });
 			continue;
 		}
-		const data = await downloadFile(r.id).then((x) => x.arrayBuffer());
+		const data = await getSave(r.name);
 		const handle = await dir.getFileHandle(r.name, { create: true });
 		const w = await handle.createWritable();
 		await w.write(data);
 		await w.close();
 		const written = await handle.getFile();
 		synced.set(r.name, { size: written.size, lastModified: written.lastModified });
-		console.log(`[saves] loaded ${r.name} from Google Drive`);
+		console.log(`[saves] loaded ${r.name} from the cloud`);
 	}
-	driveState.lastSaved = "loaded";
-}
-
-async function backupThenUpload(name: string, file: File, keepalive = false) {
-	const f = await getFolders();
-	const existing = driveIds.get(name);
-	if (existing && !keepalive) {
-		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-		await copyFile(existing, `${name} ${stamp}`, f.backups);
-		await pruneBackups(name);
-	}
-	const res: DriveFile = await uploadSmall(name, f.saves, file, existing, keepalive);
-	driveIds.set(name, res.id);
-}
-
-async function pruneBackups(name: string) {
-	const f = await getFolders();
-	const all = (await listFiles(f.backups))
-		.filter((x) => x.name.startsWith(name + " "))
-		.sort((a, b) => Date.parse(b.createdTime) - Date.parse(a.createdTime));
-	for (const old of all.slice(KEEP_BACKUPS)) {
-		await trashFile(old.id);
-	}
+	cloudState.lastSaved = "loaded";
 }
 
 let running = false;
@@ -146,29 +111,27 @@ async function syncOnce(urgent = false) {
 			}
 			pending.push([name, file]);
 		}
-		driveState.waiting = pending.length;
+		cloudState.waiting = pending.length;
 		if (pending.length === 0) return;
-		if (driveState.expired) return;
 
-		driveState.syncing = true;
+		cloudState.syncing = true;
 		for (const [name, file] of pending) {
-			await backupThenUpload(name, file, urgent);
+			await putSave(name, new Uint8Array(await file.arrayBuffer()), urgent);
 			synced.set(name, { size: file.size, lastModified: file.lastModified });
-			console.log(`[saves] sent ${name} to Google Drive`);
+			console.log(`[saves] sent ${name} to the cloud`);
 		}
-		driveState.waiting = 0;
-		driveState.lastSaved = new Date().toLocaleTimeString([], {
+		cloudState.waiting = 0;
+		cloudState.lastSaved = new Date().toLocaleTimeString([], {
 			hour: "2-digit",
 			minute: "2-digit",
 		});
-		driveState.error = "";
+		cloudState.error = "";
 	} catch (e) {
-		if (!(e instanceof DriveAuthError)) {
-			console.error("[saves] sync failed:", e);
-			driveState.error = String(e);
-		}
+		console.error("[saves] sync failed:", e);
+		cloudState.error =
+			e instanceof LockedError ? "Password needed again, reload the page" : String(e);
 	} finally {
-		driveState.syncing = false;
+		cloudState.syncing = false;
 		running = false;
 	}
 }
@@ -210,4 +173,3 @@ export async function copySavesFromFolder(gameFolder: FileSystemDirectoryHandle)
 	}
 	return n;
 }
-

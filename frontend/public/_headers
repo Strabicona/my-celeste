@@ -2,14 +2,6 @@
 	Cross-Origin-Embedder-Policy: require-corp
 	Cross-Origin-Opener-Policy: same-origin
 
-/auth
-	! Cross-Origin-Embedder-Policy
-	! Cross-Origin-Opener-Policy
-
-/auth/*
-	! Cross-Origin-Embedder-Policy
-	! Cross-Origin-Opener-Policy
-
 /_framework/*
 	Cache-Control: public, max-age=31536000, immutable
 

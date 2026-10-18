@@ -20,19 +20,11 @@ import {
 	pickDownloadsFolder,
 } from "./game/dotnet";
 import { SteamLogin, steamState } from "./steam";
-import {
-	DriveAuthError,
-	findGameFile,
-	getFolders,
-	hasValidToken,
-	isConfigured,
-	signInPopup,
-	signInRedirect,
-} from "./drive";
+import { gameInfo, LockedError } from "./cloud";
 import { downloadGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromFolder,
-	hasDriveSaves,
+	hasCloudSaves,
 	pullSaves,
 	startSaveSync,
 	syncNow,
@@ -149,7 +141,6 @@ const CloudIntro: Component<
 		start: () => Promise<void>;
 	},
 	{
-		signedIn: boolean;
 		busy: boolean;
 		status: string;
 		percent: number;
@@ -159,10 +150,8 @@ const CloudIntro: Component<
 > = function () {
 	this.css = `
 		p { margin-block: 0.3em; }
-		.error { margin-block: 0.3em; }
 	`;
-	this.signedIn = hasValidToken();
-	this.busy = false;
+	this.busy = true;
 	this.status = "";
 	this.percent = 0;
 	this.showProgress = false;
@@ -170,11 +159,9 @@ const CloudIntro: Component<
 
 	const run = async () => {
 		this.busy = true;
-		this.status = "Opening your Google Drive...";
+		this.status = "Loading your save...";
 		try {
-			await getFolders();
-			this.status = "Loading your save...";
-			const hadSaves = await hasDriveSaves();
+			const hadSaves = await hasCloudSaves();
 			await pullSaves();
 
 			if (initialHasContent && initialIsPatched) {
@@ -183,9 +170,9 @@ const CloudIntro: Component<
 				return;
 			}
 
-			const game = await findGameFile();
+			const game = await gameInfo();
 			if (game) {
-				this.status = "Downloading the game from your Google Drive...";
+				this.status = "Downloading the game...";
 				this.showProgress = true;
 				await downloadGame(game, (f) => (this.percent = f * 100));
 				this.status = "Starting the engine...";
@@ -201,48 +188,27 @@ const CloudIntro: Component<
 			this.busy = false;
 		} catch (e) {
 			this.busy = false;
-			if (e instanceof DriveAuthError) {
-				this.signedIn = false;
-				this.status = "Your Google sign-in ran out. Sign in again.";
-			} else {
-				console.error(e);
-				this.status = "Something went wrong: " + e;
+			console.error(e);
+			if (e instanceof LockedError) {
+				location.reload();
+				return;
 			}
+			this.status = "Something went wrong: " + e;
 		}
 	};
-	if (this.signedIn) queueMicrotask(run);
+	queueMicrotask(run);
 
 	return (
 		<div class="step">
-			{isConfigured() ? null : (
-				<div class="error">
-					This copy has no Google sign-in configured yet (missing client ID).
-				</div>
-			)}
-			{$if(
-				use(this.signedIn, (x) => !x),
-				<div class="step">
-					<p>Sign in with Google to load the game and your save from your Drive.</p>
-					<Button
-						type="primary"
-						icon="left"
-						disabled={!isConfigured()}
-						on:click={() => signInRedirect()}
-					>
-						<Icon icon={iconEncrypted} />
-						Sign in with Google
-					</Button>
-				</div>
-			)}
 			{$if(
 				use(this.needsSetup),
 				<div class="step">
 					<p>
-						<b>First-time setup.</b> Your Drive has no game copy yet. Pick your
+						<b>First-time setup.</b> There's no game copy online yet. Pick your
 						Celeste folder on this PC (Documents &gt; My Games &gt; Celeste2).
-						The game is copied, prepared, and sent to your Google Drive once
-						(about 1.1 GB). Your save comes along too. After that, any device
-						only needs to sign in.
+						The game is copied, prepared, and sent online once (about 1.1 GB).
+						Your save comes along too. After that, any device only needs the
+						password.
 					</p>
 					<Button
 						type="primary"
@@ -279,7 +245,7 @@ const UploadGame: Component<
 		this.failed = false;
 		try {
 			this.status =
-				"Sending the game to your Google Drive (one time, about 1.1 GB). Keep this tab open.";
+				"Sending the game online (one time, about 1.1 GB). Keep this tab open.";
 			await uploadGame((f) => (this.percent = f * 100));
 			this.status = "Sending your save...";
 			await syncNow();
@@ -289,8 +255,8 @@ const UploadGame: Component<
 			console.error(e);
 			this.failed = true;
 			this.status =
-				e instanceof DriveAuthError
-					? "Your Google sign-in ran out during the upload."
+				e instanceof LockedError
+					? "The password ran out during the upload. Reload the page and try again."
 					: "The upload failed: " + e;
 		}
 	};
@@ -306,10 +272,7 @@ const UploadGame: Component<
 					type="primary"
 					icon="left"
 					disabled={false}
-					on:click={async () => {
-						if (!hasValidToken()) await signInPopup();
-						run();
-					}}
+					on:click={() => run()}
 				>
 					<Icon icon={iconCloudUpload} />
 					Try again

@@ -5,7 +5,7 @@ import { store } from "./store";
 
 import { OpfsExplorer } from "./fs";
 import { Achievements } from "./achievements";
-import { driveState, signInPopup } from "./drive";
+import { cloudState } from "./cloud";
 import { syncNow } from "./savesync";
 import { Settings } from "./settings";
 
@@ -109,27 +109,19 @@ const TopBar: Component<
 	});
 
 	useChange(
-		[
-			driveState.expired,
-			driveState.syncing,
-			driveState.waiting,
-			driveState.lastSaved,
-			driveState.error,
-		],
+		[cloudState.syncing, cloudState.waiting, cloudState.lastSaved, cloudState.error],
 		() => {
-			this.driveLabel = driveState.expired
-				? driveState.waiting > 0
-					? `Reconnect Google (${driveState.waiting} save waiting)`
-					: "Reconnect Google"
-				: driveState.syncing
-					? "Saving to Drive..."
-					: driveState.error
-						? "Drive error, click to retry"
-						: driveState.lastSaved === "loaded"
+			this.driveLabel = cloudState.syncing
+				? "Saving online..."
+				: cloudState.error
+					? "Save error, click to retry"
+					: cloudState.waiting > 0
+						? `${cloudState.waiting} save waiting`
+						: cloudState.lastSaved === "loaded"
 							? "Save loaded"
-							: driveState.lastSaved
-								? `Saved ${driveState.lastSaved}`
-								: "Drive";
+							: cloudState.lastSaved
+								? `Saved ${cloudState.lastSaved}`
+								: "Online save";
 		}
 	);
 
@@ -142,18 +134,15 @@ const TopBar: Component<
 			<div class="group">
 				<Button
 					on:click={async () => {
-						if (driveState.expired || !driveState.signedIn) {
-							await signInPopup();
-						}
 						await syncNow();
 					}}
 					icon="left"
 					type="normal"
 					disabled={false}
-					title={"Google Drive save status. Click to save now."}
+					title={"Online save status. Click to save now."}
 				>
 					{$if(
-						use(driveState.expired),
+						use(cloudState.error),
 						<Icon icon={iconCloudOff} />,
 						<Icon icon={iconCloudDone} />
 					)}

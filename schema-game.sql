@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS game_pieces (version TEXT NOT NULL, idx INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (version, idx));

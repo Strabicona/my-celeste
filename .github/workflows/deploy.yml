@@ -48,8 +48,6 @@ jobs:
         run: sudo apt-get install -y mono-devel
 
       - name: Build
-        env:
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: |
           cd loader && dotnet workload restore && cd ..
           make publish
@@ -63,6 +61,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
         run: |
           npx -y wrangler@4 pages project create my-celeste --production-branch=main || echo "project already exists"
-          npx -y wrangler@4 pages deploy frontend/dist --project-name=my-celeste --branch=main --commit-dirty=true
+          if [ -n "$SITE_PASSWORD" ]; then
+            printf '%s' "$SITE_PASSWORD" | npx -y wrangler@4 pages secret put SITE_PASSWORD --project-name=my-celeste
+          else
+            echo "SITE_PASSWORD secret is missing: the site will stay locked for everyone"
+          fi
+          npx -y wrangler@4 pages deploy --branch=main --commit-dirty=true

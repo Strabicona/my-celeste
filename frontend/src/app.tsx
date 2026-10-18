@@ -59,6 +59,13 @@ const root = document.getElementById("app")!;
 // The game needs the browser's multithreading mode. On GitHub Pages a helper
 // script switches it on, which takes one automatic reload the first time (and
 // again after the site's data is cleared). Never start the game before that.
+// tidy the address bar after a fresh reload (see index.html)
+if (new URLSearchParams(location.search).has("fresh")) {
+	const u = new URL(location.href);
+	u.searchParams.delete("fresh");
+	history.replaceState(null, "", u.toString());
+}
+
 async function waitForIsolation(): Promise<boolean> {
 	if (self.crossOriginIsolated) return true;
 	const tried = sessionStorage.getItem("my-celeste-isolation-reload");
@@ -67,17 +74,22 @@ async function waitForIsolation(): Promise<boolean> {
 		: "Getting things ready, the page will reload by itself...";
 	if (!tried && navigator.serviceWorker) {
 		sessionStorage.setItem("my-celeste-isolation-reload", "1");
-		await navigator.serviceWorker.ready;
+		// reload once the helper is installed, or after 8 seconds at the latest
+		await Promise.race([
+			navigator.serviceWorker.ready,
+			new Promise((r) => setTimeout(r, 8000)),
+		]);
 		location.reload();
 	}
 	return false;
 }
 
-if (await waitForIsolation()) try {
-	sessionStorage.removeItem("my-celeste-isolation-reload");
-	root.replaceWith(<App />);
-} catch (err) {
-	console.log(err);
-	root.replaceWith(document.createTextNode(`Failed to load:\n ${err}`));
-	document.body.classList.add("error");
-}
+if (await waitForIsolation())
+	try {
+		sessionStorage.removeItem("my-celeste-isolation-reload");
+		root.replaceWith(<App />);
+	} catch (err) {
+		console.log(err);
+		root.replaceWith(document.createTextNode(`Failed to load:\n ${err}`));
+		document.body.classList.add("error");
+	}

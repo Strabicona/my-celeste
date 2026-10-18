@@ -205,11 +205,30 @@ export async function preInit() {
 		url = "/_framework/dotnet.js";
 	}
 
+	// tie the engine loader to this exact build, so a cached older copy is never mixed in
+	url += "?v=" + (import.meta.env.VITE_BUILD_ID || "dev");
+
+	try {
+		await loadRuntime(url);
+	} catch (e) {
+		// usually a site update happened while this page was open or cached:
+		// reload once with fresh files instead of showing the error
+		if ((window as any).myCelesteReloadFresh?.()) await new Promise(() => {});
+		throw e;
+	}
+	try {
+		sessionStorage.removeItem("my-celeste-fresh-reload");
+	} catch {}
+	await afterRuntime();
+}
+
+let runtime: Awaited<ReturnType<DotnetHostBuilder["create"]>>;
+async function loadRuntime(url: string) {
 	wasm = await eval(`import("${url}")`);
 	dotnet = wasm.dotnet;
 
 	console.debug("initializing dotnet");
-	const runtime = await dotnet
+	runtime = await dotnet
 		.withConfig({
 			pthreadPoolInitialSize: 16,
 		})
@@ -276,7 +295,9 @@ export async function preInit() {
 			}
 		})
 		.create();
+}
 
+async function afterRuntime() {
 	runtime.setModuleImports("SteamJS", SteamJS);
 	runtime.setModuleImports("JsSplash", JsSplash);
 

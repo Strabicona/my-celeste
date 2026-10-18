@@ -6,6 +6,31 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta name="darkreader-lock" />
 		<meta name="robots" content="noindex, nofollow" />
+		<!-- After a site update, Chrome can keep the previous page for up to 10 minutes while
+		     its files are already gone. If a file fails to load, reload once, fresh. -->
+		<script>
+			window.myCelesteReloadFresh = function () {
+				try {
+					if (sessionStorage.getItem("my-celeste-fresh-reload")) return false;
+					sessionStorage.setItem("my-celeste-fresh-reload", "1");
+				} catch (e) {
+					return false;
+				}
+				var u = new URL(location.href);
+				u.searchParams.set("fresh", Date.now().toString(36));
+				location.replace(u.toString());
+				return true;
+			};
+			window.addEventListener(
+				"error",
+				function (e) {
+					var t = e.target;
+					if (t && (t.tagName === "SCRIPT" || t.tagName === "LINK"))
+						window.myCelesteReloadFresh();
+				},
+				true
+			);
+		</script>
 		<!-- GitHub Pages can't send the multithreading headers; this script adds them (does nothing on Cloudflare, which sends them itself) -->
 		<script src="coi-serviceworker.js"></script>
 		<title>My Celeste</title>

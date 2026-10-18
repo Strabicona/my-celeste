@@ -55,7 +55,26 @@ const App: Component<
 };
 
 const root = document.getElementById("app")!;
-try {
+
+// The game needs the browser's multithreading mode. On GitHub Pages a helper
+// script switches it on, which takes one automatic reload the first time (and
+// again after the site's data is cleared). Never start the game before that.
+async function waitForIsolation(): Promise<boolean> {
+	if (self.crossOriginIsolated) return true;
+	const tried = sessionStorage.getItem("my-celeste-isolation-reload");
+	root.textContent = tried
+		? "This browser window can't run the game: open the link in a normal Chrome window (not incognito, not Brave)."
+		: "Getting things ready, the page will reload by itself...";
+	if (!tried && navigator.serviceWorker) {
+		sessionStorage.setItem("my-celeste-isolation-reload", "1");
+		await navigator.serviceWorker.ready;
+		location.reload();
+	}
+	return false;
+}
+
+if (await waitForIsolation()) try {
+	sessionStorage.removeItem("my-celeste-isolation-reload");
 	root.replaceWith(<App />);
 } catch (err) {
 	console.log(err);

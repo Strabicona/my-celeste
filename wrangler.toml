@@ -1,0 +1,30 @@
+# Cloudflare Pages settings for my-celeste (used by `wrangler pages deploy`).
+name = "my-celeste"
+pages_build_output_dir = "frontend/dist"
+compatibility_date = "2026-10-01"
+
+# DB0 holds the saves and their backups; DB1-DB4 hold the game copy.
+[[d1_databases]]
+binding = "DB0"
+database_name = "my-celeste-saves"
+database_id = "41e611d4-55b3-40c4-abd3-78fd15272a8c"
+
+[[d1_databases]]
+binding = "DB1"
+database_name = "my-celeste-game-1"
+database_id = "10f0b15b-eb15-4c98-98a8-944dbc66de1e"
+
+[[d1_databases]]
+binding = "DB2"
+database_name = "my-celeste-game-2"
+database_id = "135eea61-ff76-4d1d-998f-0a69f1f6f63d"
+
+[[d1_databases]]
+binding = "DB3"
+database_name = "my-celeste-game-3"
+database_id = "43ce646f-dd59-4933-bed6-9dd270e252a4"
+
+[[d1_databases]]
+binding = "DB4"
+database_name = "my-celeste-game-4"
+database_id = "782357b9-6d31-4812-b1c0-5e64ec2110d0"

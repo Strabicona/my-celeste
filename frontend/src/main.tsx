@@ -6,7 +6,7 @@ import { store } from "./store";
 import { OpfsExplorer } from "./fs";
 import { Achievements } from "./achievements";
 import { cloudState } from "./cloud";
-import { syncNow } from "./savesync";
+import { importSaveFiles, syncNow } from "./savesync";
 import { Settings } from "./settings";
 
 import iconPlayArrow from "@ktibow/iconset-material-symbols/play-arrow";
@@ -14,10 +14,19 @@ import iconFullscreen from "@ktibow/iconset-material-symbols/fullscreen";
 import iconFolderOpen from "@ktibow/iconset-material-symbols/folder-open";
 import iconTrophy from "@ktibow/iconset-material-symbols/trophy";
 import iconCloudDone from "@ktibow/iconset-material-symbols/cloud-done";
+import iconUpload from "@ktibow/iconset-material-symbols/upload";
 import iconCloudOff from "@ktibow/iconset-material-symbols/cloud-off";
 import iconSettings from "@ktibow/iconset-material-symbols/settings";
 
 export const NAME = "webleste";
+
+function alertImport(done: string[]) {
+	console.log(
+		done.length
+			? `[saves] imported ${done.join(", ")}`
+			: "[saves] nothing imported: pick files like 0.celeste or settings.celeste"
+	);
+}
 
 export const Logo: Component<{}, {}> = function () {
 	this.css = `
@@ -71,7 +80,7 @@ const TopBar: Component<
 		modInstallerOpen: boolean;
 		settingsOpen: boolean;
 	},
-	{ allowPlay: boolean; fps: HTMLElement; driveLabel: string }
+	{ allowPlay: boolean; fps: HTMLElement; driveLabel: string; importInput: HTMLInputElement }
 > = function () {
 	this.css = `
 		background: var(--bg);
@@ -132,6 +141,30 @@ const TopBar: Component<
 			</div>
 			<div class="expand" />
 			<div class="group">
+				<input
+					type="file"
+					multiple
+					accept=".celeste"
+					style="display: none"
+					bind:this={use(this.importInput)}
+					on:change={async () => {
+						const files = [...(this.importInput.files || [])];
+						this.importInput.value = "";
+						if (!files.length) return;
+						const done = await importSaveFiles(files);
+						alertImport(done);
+					}}
+				/>
+				<Button
+					on:click={() => this.importInput.click()}
+					icon="left"
+					type="normal"
+					disabled={use(gameState.playing)}
+					title={"Import save files (0.celeste, settings.celeste) from this computer. Do it before pressing Play."}
+				>
+					<Icon icon={iconUpload} />
+					<span>Import save</span>
+				</Button>
 				<Button
 					on:click={async () => {
 						await syncNow();

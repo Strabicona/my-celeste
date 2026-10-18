@@ -94,7 +94,7 @@ export async function pullSaves(): Promise<void> {
 
 let running = false;
 
-async function syncOnce(urgent = false) {
+async function syncOnce(urgent = false, keepalive = false) {
 	if (running) return;
 	running = true;
 	try {
@@ -116,7 +116,7 @@ async function syncOnce(urgent = false) {
 
 		cloudState.syncing = true;
 		for (const [name, file] of pending) {
-			await putSave(name, new Uint8Array(await file.arrayBuffer()), urgent);
+			await putSave(name, new Uint8Array(await file.arrayBuffer()), keepalive);
 			synced.set(name, { size: file.size, lastModified: file.lastModified });
 			console.log(`[saves] sent ${name} to the cloud`);
 		}
@@ -143,9 +143,9 @@ export function startSaveSync() {
 	setInterval(() => syncOnce(false), POLL_MS);
 	// last-chance send when the tab is hidden or closed
 	document.addEventListener("visibilitychange", () => {
-		if (document.visibilityState === "hidden") syncOnce(true);
+		if (document.visibilityState === "hidden") syncOnce(true, true);
 	});
-	window.addEventListener("pagehide", () => syncOnce(true));
+	window.addEventListener("pagehide", () => syncOnce(true, true));
 }
 
 export async function syncNow() {
@@ -172,4 +172,43 @@ export async function copySavesFromFolder(gameFolder: FileSystemDirectoryHandle)
 		n++;
 	}
 	return n;
+}
+
+async function writeSave(name: string, data: ArrayBuffer) {
+	const dst = await savesDir();
+	const out = await dst.getFileHandle(name, { create: true });
+	const w = await out.createWritable();
+	await w.write(data);
+	await w.close();
+}
+
+// Same as copySavesFromFolder, for a folder that was dragged onto the page.
+export async function copySavesFromDroppedFolder(gameFolder: FileSystemDirectoryEntry) {
+	const read = (dir: FileSystemDirectoryEntry) =>
+		new Promise<FileSystemEntry[]>((res, rej) => dir.createReader().readEntries(res, rej));
+	const saves = (await read(gameFolder)).find((e) => e.isDirectory && e.name === "Saves") as
+		| FileSystemDirectoryEntry
+		| undefined;
+	if (!saves) return 0;
+	let n = 0;
+	for (const entry of await read(saves)) {
+		if (!entry.isFile || !isSyncedSave(entry.name)) continue;
+		const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+		await writeSave(entry.name, await file.arrayBuffer());
+		n++;
+	}
+	return n;
+}
+
+// "Import save from this PC": pick save files (0.celeste, settings.celeste...)
+// and put them in place; the sync then sends them online.
+export async function importSaveFiles(files: File[]): Promise<string[]> {
+	const done: string[] = [];
+	for (const f of files) {
+		if (!isSyncedSave(f.name)) continue;
+		await writeSave(f.name, await f.arrayBuffer());
+		done.push(f.name);
+	}
+	if (done.length) await syncNow();
+	return done;
 }

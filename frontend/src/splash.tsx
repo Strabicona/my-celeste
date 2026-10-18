@@ -23,6 +23,7 @@ import { SteamLogin, steamState } from "./steam";
 import { gameInfo, hasAccess, LockedError, unlock } from "./cloud";
 import { downloadGame, uploadGame } from "./cloudgame";
 import {
+	copySavesFromDroppedFolder,
 	copySavesFromFolder,
 	hasCloudSaves,
 	pullSaves,
@@ -556,6 +557,10 @@ const Copy: Component<
 			}
 
 			await copyFileForBadBrowsers(celesteExe!, rootFolder);
+			if (copyPcSaves) {
+				const n = await copySavesFromDroppedFolder(directory);
+				console.log(`copied ${n} save files from the dropped Celeste folder`);
+			}
 			await new Promise((r) => setTimeout(r, 250));
 			await rootFolder.getFileHandle(".ContentExists", { create: true });
 

@@ -1,3 +1,4 @@
+import { readFileRetry } from "./readretry";
 // Moves the game files between the browser's storage and the site's cloud
 // storage as one archive (Content folder + the clean Celeste.exe + the
 // already-patched CustomCeleste.dll), cut into 1.4 MB pieces. Because the
@@ -19,12 +20,15 @@ const VERSION_FILE = ".GameVersion";
 // Which online game copy this browser's files came from, so a fixed or
 // replaced copy is downloaded again instead of reusing old local files.
 export async function localGameVersion(): Promise<string | null> {
+	let f: FileSystemFileHandle;
 	try {
-		const f = await rootFolder.getFileHandle(VERSION_FILE, { create: false });
-		return (await (await f.getFile()).text()).trim() || null;
+		f = await rootFolder.getFileHandle(VERSION_FILE, { create: false });
 	} catch {
-		return null;
+		return null; // no game in this browser yet
 	}
+	// a busy file must not look like "no game", which would download it all again
+	const { bytes } = await readFileRetry(f);
+	return new TextDecoder().decode(bytes).trim() || null;
 }
 
 async function setLocalGameVersion(version: string) {
@@ -66,7 +70,9 @@ export async function localGameSize(): Promise<number> {
 		} catch {}
 		try {
 			total += (
-				await (await rootFolder.getFileHandle(name, { create: false })).getFile()
+				await (
+					await rootFolder.getFileHandle(name, { create: false })
+				).getFile()
 			).size;
 		} catch {}
 	}
@@ -78,7 +84,9 @@ export async function uploadGame(onProgress: (fraction: number) => void) {
 	const version = "v" + Date.now().toString(36);
 	await startGameUpload();
 
-	const reader = (createTar(rootFolder, undefined, GAME_ITEMS) as ReadableStream<Uint8Array>).getReader();
+	const reader = (
+		createTar(rootFolder, undefined, GAME_ITEMS) as ReadableStream<Uint8Array>
+	).getReader();
 	let buffer = new Uint8Array(PIECE);
 	let filled = 0;
 	let index = 0;
@@ -118,7 +126,10 @@ export async function uploadGame(onProgress: (fraction: number) => void) {
 	await setLocalGameVersion(version);
 }
 
-export async function downloadGame(info: GameInfo, onProgress: (fraction: number) => void) {
+export async function downloadGame(
+	info: GameInfo,
+	onProgress: (fraction: number) => void
+) {
 	let next = 0;
 	let got = 0;
 	// fetch a few pieces ahead, hand them to the unpacker strictly in order

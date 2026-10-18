@@ -9,6 +9,7 @@
 //   backup, and only the newest 3 backups per save file.
 import { readAllEntries, rootFolder } from "./fs";
 import { cloudState, getSave, listSaves, LockedError, putSave } from "./cloud";
+import { readFileRetry } from "./readretry";
 
 const SAVES_PATH = ["Celeste", "Saves"];
 const POLL_MS = 2000;
@@ -33,13 +34,24 @@ const synced = new Map<string, Seen>();
 // last observation, used to wait until the game has finished writing
 const lastSeen = new Map<string, Seen>();
 
-async function readLocal(): Promise<Map<string, File>> {
-	const out = new Map<string, File>();
+type Local = {
+	handle: FileSystemFileHandle;
+	size: number;
+	lastModified: number;
+};
+
+async function readLocal(): Promise<Map<string, Local>> {
+	const out = new Map<string, Local>();
 	const dir = await savesDir();
 	for await (const [name, handle] of dir) {
 		if (handle.kind !== "file" || !isSyncedSave(name)) continue;
 		try {
-			out.set(name, await (handle as FileSystemFileHandle).getFile());
+			const f = await (handle as FileSystemFileHandle).getFile();
+			out.set(name, {
+				handle: handle as FileSystemFileHandle,
+				size: f.size,
+				lastModified: f.lastModified,
+			});
 		} catch {
 			// the game may be writing it right now; next poll will catch it
 		}
@@ -69,15 +81,15 @@ export async function pullSaves(): Promise<void> {
 	for (const r of remote) {
 		const l = local.get(r.name);
 		if (l && l.lastModified > r.modified) {
-			const [lb, rb] = await Promise.all([
-				l.arrayBuffer().then((x) => new Uint8Array(x)),
+			const [snap, rb] = await Promise.all([
+				readFileRetry(l.handle),
 				getSave(r.name),
 			]);
-			if (!equalBytes(lb, rb)) {
+			if (!equalBytes(snap.bytes, rb)) {
 				console.log(`[saves] keeping newer browser copy of ${r.name}`);
 				continue; // left unsynced on purpose: the sync loop uploads it
 			}
-			synced.set(r.name, { size: l.size, lastModified: l.lastModified });
+			synced.set(r.name, { size: snap.size, lastModified: snap.lastModified });
 			continue;
 		}
 		const data = await getSave(r.name);
@@ -86,7 +98,10 @@ export async function pullSaves(): Promise<void> {
 		await w.write(data);
 		await w.close();
 		const written = await handle.getFile();
-		synced.set(r.name, { size: written.size, lastModified: written.lastModified });
+		synced.set(r.name, {
+			size: written.size,
+			lastModified: written.lastModified,
+		});
 		console.log(`[saves] loaded ${r.name} from the cloud`);
 	}
 	cloudState.lastSaved = "loaded";
@@ -99,7 +114,7 @@ async function syncOnce(urgent = false, keepalive = false) {
 	running = true;
 	try {
 		const local = await readLocal();
-		const pending: [string, File][] = [];
+		const pending: [string, Local][] = [];
 		for (const [name, file] of local) {
 			const now = { size: file.size, lastModified: file.lastModified };
 			if (same(synced.get(name), now)) continue;
@@ -116,8 +131,9 @@ async function syncOnce(urgent = false, keepalive = false) {
 
 		cloudState.syncing = true;
 		for (const [name, file] of pending) {
-			await putSave(name, new Uint8Array(await file.arrayBuffer()), keepalive);
-			synced.set(name, { size: file.size, lastModified: file.lastModified });
+			const snap = await readFileRetry(file.handle);
+			await putSave(name, snap.bytes, keepalive);
+			synced.set(name, { size: snap.size, lastModified: snap.lastModified });
 			console.log(`[saves] sent ${name} to the cloud`);
 		}
 		cloudState.waiting = 0;
@@ -129,7 +145,9 @@ async function syncOnce(urgent = false, keepalive = false) {
 	} catch (e) {
 		console.error("[saves] sync failed:", e);
 		cloudState.error =
-			e instanceof LockedError ? "Password needed again, reload the page" : String(e);
+			e instanceof LockedError
+				? "Password needed again, reload the page"
+				: String(e);
 	} finally {
 		cloudState.syncing = false;
 		running = false;
@@ -153,7 +171,9 @@ export async function syncNow() {
 }
 
 // Copies vanilla saves out of a picked PC Celeste folder (first-time setup).
-export async function copySavesFromFolder(gameFolder: FileSystemDirectoryHandle) {
+export async function copySavesFromFolder(
+	gameFolder: FileSystemDirectoryHandle
+) {
 	let src: FileSystemDirectoryHandle;
 	try {
 		src = await gameFolder.getDirectoryHandle("Saves", { create: false });
@@ -183,16 +203,20 @@ async function writeSave(name: string, data: ArrayBuffer) {
 }
 
 // Same as copySavesFromFolder, for a folder that was dragged onto the page.
-export async function copySavesFromDroppedFolder(gameFolder: FileSystemDirectoryEntry) {
+export async function copySavesFromDroppedFolder(
+	gameFolder: FileSystemDirectoryEntry
+) {
 	const read = readAllEntries;
-	const saves = (await read(gameFolder)).find((e) => e.isDirectory && e.name === "Saves") as
-		| FileSystemDirectoryEntry
-		| undefined;
+	const saves = (await read(gameFolder)).find(
+		(e) => e.isDirectory && e.name === "Saves"
+	) as FileSystemDirectoryEntry | undefined;
 	if (!saves) return 0;
 	let n = 0;
 	for (const entry of await read(saves)) {
 		if (!entry.isFile || !isSyncedSave(entry.name)) continue;
-		const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+		const file = await new Promise<File>((res, rej) =>
+			(entry as FileSystemFileEntry).file(res, rej)
+		);
 		await writeSave(entry.name, await file.arrayBuffer());
 		n++;
 	}

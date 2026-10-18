@@ -14,6 +14,33 @@ import {
 } from "./cloud";
 
 const GAME_ITEMS = ["Content", "Celeste.exe", "CustomCeleste.dll"];
+const VERSION_FILE = ".GameVersion";
+
+// Which online game copy this browser's files came from, so a fixed or
+// replaced copy is downloaded again instead of reusing old local files.
+export async function localGameVersion(): Promise<string | null> {
+	try {
+		const f = await rootFolder.getFileHandle(VERSION_FILE, { create: false });
+		return (await (await f.getFile()).text()).trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+async function setLocalGameVersion(version: string) {
+	const f = await rootFolder.getFileHandle(VERSION_FILE, { create: true });
+	const w = await f.createWritable();
+	await w.write(version);
+	await w.close();
+}
+
+export async function removeLocalGame() {
+	for (const name of [...GAME_ITEMS, ".ContentExists", VERSION_FILE]) {
+		try {
+			await rootFolder.removeEntry(name, { recursive: true });
+		} catch {}
+	}
+}
 const PARALLEL = 4;
 
 async function folderSize(dir: FileSystemDirectoryHandle): Promise<number> {
@@ -88,6 +115,7 @@ export async function uploadGame(onProgress: (fraction: number) => void) {
 	await Promise.all(inflight);
 
 	await commitGame({ version, pieces: index, size: total });
+	await setLocalGameVersion(version);
 }
 
 export async function downloadGame(info: GameInfo, onProgress: (fraction: number) => void) {
@@ -119,4 +147,5 @@ export async function downloadGame(info: GameInfo, onProgress: (fraction: number
 	});
 	await extractTar(stream, rootFolder);
 	await rootFolder.getFileHandle(".ContentExists", { create: true });
+	await setLocalGameVersion(info.version);
 }

@@ -7,7 +7,7 @@
 // - While the page is open, every changed save is sent up a few seconds after
 //   the game finishes writing it. The server keeps the previous version as a
 //   backup, and only the newest 3 backups per save file.
-import { rootFolder } from "./fs";
+import { readAllEntries, rootFolder } from "./fs";
 import { cloudState, getSave, listSaves, LockedError, putSave } from "./cloud";
 
 const SAVES_PATH = ["Celeste", "Saves"];
@@ -184,8 +184,7 @@ async function writeSave(name: string, data: ArrayBuffer) {
 
 // Same as copySavesFromFolder, for a folder that was dragged onto the page.
 export async function copySavesFromDroppedFolder(gameFolder: FileSystemDirectoryEntry) {
-	const read = (dir: FileSystemDirectoryEntry) =>
-		new Promise<FileSystemEntry[]>((res, rej) => dir.createReader().readEntries(res, rej));
+	const read = readAllEntries;
 	const saves = (await read(gameFolder)).find((e) => e.isDirectory && e.name === "Saves") as
 		| FileSystemDirectoryEntry
 		| undefined;

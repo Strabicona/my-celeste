@@ -9,6 +9,7 @@ import {
 	countFolderForBadBrowsers,
 	extractTar,
 	hasContent,
+	readAllEntries,
 	FSAPI_UNAVAILABLE,
 	PICKERS_UNAVAILABLE,
 	rootFolder,
@@ -21,7 +22,7 @@ import {
 } from "./game/dotnet";
 import { SteamLogin, steamState } from "./steam";
 import { gameInfo, hasAccess, LockedError, unlock } from "./cloud";
-import { downloadGame, uploadGame } from "./cloudgame";
+import { downloadGame, localGameVersion, removeLocalGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromDroppedFolder,
 	copySavesFromFolder,
@@ -169,14 +170,17 @@ const CloudIntro: Component<
 			const hadSaves = await hasCloudSaves();
 			await pullSaves();
 
-			if (initialHasContent && initialIsPatched) {
+			const game = await gameInfo();
+			const local = await localGameVersion();
+			if (initialHasContent && initialIsPatched && (!game || local === game.version)) {
 				startSaveSync();
 				this["on:next"]("done");
 				return;
 			}
 
-			const game = await gameInfo();
 			if (game) {
+				// this browser has no game yet, or an older copy: fetch the current one
+				await removeLocalGame();
 				this.status = "Downloading the game...";
 				this.showProgress = true;
 				await downloadGame(game, (f) => (this.percent = f * 100));
@@ -267,6 +271,8 @@ const CloudIntro: Component<
 						disabled={use(this.busy, (x) => x || FSAPI_UNAVAILABLE)}
 						on:click={async () => {
 							this.busy = true;
+							this.status = "Clearing old files...";
+							await removeLocalGame();
 							this.status = "Starting the engine...";
 							await this.start();
 							this.status = "";
@@ -520,8 +526,7 @@ const Copy: Component<
 		}
 
 		const directory = handle as FileSystemDirectoryEntry;
-		const reader = directory.createReader();
-		reader.readEntries(async (entries: FileSystemEntry[]) => {
+		await (async (entries: FileSystemEntry[]) => {
 			const contentFolder = entries.find(
 				(e) => e.name === "Content"
 			) as FileSystemDirectoryEntry;
@@ -542,10 +547,7 @@ const Copy: Component<
 				let orig = entries.find(
 					(e) => e.name === "orig"
 				) as FileSystemDirectoryEntry;
-				let reader = orig.createReader();
-				let subEntries = await new Promise<FileSystemEntry[]>((r) =>
-					reader.readEntries(r)
-				);
+				let subEntries = await readAllEntries(orig);
 				celesteExe = subEntries.find(
 					(e) => e.name === "Celeste.exe"
 				) as FileSystemFileEntry;
@@ -566,7 +568,7 @@ const Copy: Component<
 
 			event("assets-provided", { option: "opfs-bad" });
 			this["on:done"]();
-		});
+		})(await readAllEntries(directory));
 	};
 
 	let ua = navigator.userAgent;

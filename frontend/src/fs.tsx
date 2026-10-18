@@ -136,6 +136,22 @@ export async function copyFile(
 	await data.pipeTo(writable);
 }
 
+// Chrome hands out a dragged folder's contents at most 100 entries at a time;
+// keep asking until it returns nothing, or big folders get cut off.
+export async function readAllEntries(
+	folder: FileSystemDirectoryEntry
+): Promise<FileSystemEntry[]> {
+	const reader = folder.createReader();
+	const all: FileSystemEntry[] = [];
+	for (;;) {
+		const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+			reader.readEntries(resolve, reject)
+		);
+		if (batch.length === 0) return all;
+		all.push(...batch);
+	}
+}
+
 export async function copyFileForBadBrowsers(
 	file: FileSystemFileEntry,
 	to: FileSystemDirectoryHandle
@@ -170,10 +186,7 @@ export async function countFolderForBadBrowsers(
 ): Promise<number> {
 	let count = 0;
 	async function countOne(folder: FileSystemDirectoryEntry) {
-		const reader = folder.createReader();
-		const entries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
-			reader.readEntries(resolve, reject);
-		});
+		const entries = await readAllEntries(folder);
 
 		for (const entry of entries) {
 			if (entry.isFile) {
@@ -219,17 +232,16 @@ export async function copyFolderForBadBrowsers(
 		from: FileSystemDirectoryEntry,
 		to: FileSystemDirectoryHandle
 	) {
-		const reader = from.createReader();
-		const entries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
-			reader.readEntries(resolve, reject);
-		});
+		const entries = await readAllEntries(from);
 
 		for (const entry of entries) {
 			if (entry.isFile) {
 				const file = entry as FileSystemFileEntry;
 				const fileHandle = await to.getFileHandle(file.name, { create: true });
 				const writable = await fileHandle.createWritable();
-				file.file((f) => f.stream().pipeTo(writable));
+				// wait for each file to be fully written before moving on
+				const data = await new Promise<File>((resolve, reject) => file.file(resolve, reject));
+				await data.stream().pipeTo(writable);
 				if (callback) callback(file.name);
 			} else {
 				const dir = entry as FileSystemDirectoryEntry;

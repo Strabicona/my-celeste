@@ -20,7 +20,7 @@ import {
 	pickDownloadsFolder,
 } from "./game/dotnet";
 import { SteamLogin, steamState } from "./steam";
-import { gameInfo, LockedError } from "./cloud";
+import { gameInfo, hasAccess, LockedError, unlock } from "./cloud";
 import { downloadGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromFolder,
@@ -146,11 +146,15 @@ const CloudIntro: Component<
 		percent: number;
 		showProgress: boolean;
 		needsSetup: boolean;
+		locked: boolean;
+		password: string;
 	}
 > = function () {
 	this.css = `
 		p { margin-block: 0.3em; }
 	`;
+	this.locked = !hasAccess();
+	this.password = "";
 	this.busy = true;
 	this.status = "";
 	this.percent = 0;
@@ -190,16 +194,62 @@ const CloudIntro: Component<
 			this.busy = false;
 			console.error(e);
 			if (e instanceof LockedError) {
-				location.reload();
+				this.locked = true;
+				this.status = "Enter the password again.";
 				return;
 			}
 			this.status = "Something went wrong: " + e;
 		}
 	};
-	queueMicrotask(run);
+	if (!this.locked) queueMicrotask(run);
+
+	const tryUnlock = async () => {
+		this.busy = true;
+		this.status = "Checking...";
+		try {
+			if (await unlock(this.password)) {
+				this.password = "";
+				this.locked = false;
+				this.status = "";
+				run();
+			} else {
+				this.status = "Wrong password.";
+				this.busy = false;
+			}
+		} catch (e) {
+			this.status = "Could not reach the storage: " + e;
+			this.busy = false;
+		}
+	};
 
 	return (
 		<div class="step">
+			{$if(
+				use(this.locked),
+				<form
+					class="step"
+					on:submit={(e: SubmitEvent) => {
+						e.preventDefault();
+						tryUnlock();
+					}}
+				>
+					<p>Enter your password to load the game and your save.</p>
+					<input
+						type="password"
+						autocomplete="current-password"
+						placeholder="Password"
+						bind:value={use(this.password)}
+						on:input={(e: InputEvent) =>
+							(this.password = (e.target as HTMLInputElement).value)
+						}
+						style="font: inherit; padding: 0.6em 0.8em; border-radius: 0.6em; border: 1px solid var(--surface4); background: var(--surface1); color: var(--fg);"
+					/>
+					<Button type="primary" icon="left" disabled={false} on:click={() => {}}>
+						<Icon icon={iconEncrypted} />
+						Enter
+					</Button>
+				</form>
+			)}
 			{$if(
 				use(this.needsSetup),
 				<div class="step">

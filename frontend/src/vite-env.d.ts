@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
 	readonly VITE_STEAM_ENABLED: boolean;
 	readonly WISP_URL: boolean;
+	readonly VITE_API_BASE: string;
 }
 
 interface ImportMeta {

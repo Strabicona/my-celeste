@@ -48,6 +48,9 @@ jobs:
         run: sudo apt-get install -y mono-devel
 
       - name: Build
+        env:
+          # the GitHub Pages copy talks to the locked storage on Cloudflare
+          VITE_API_BASE: https://my-celeste.pages.dev
         run: |
           cd loader && dotnet workload restore && cd ..
           make publish
@@ -70,3 +73,23 @@ jobs:
             echo "SITE_PASSWORD secret is missing: the site will stay locked for everyone"
           fi
           npx -y wrangler@4 pages deploy --branch=main --commit-dirty=true
+
+      - name: Package the GitHub Pages copy
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  github-pages:
+    name: Publish to GitHub Pages
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -26,6 +26,8 @@ const COOKIE = "mc_auth";
 const KEEP_BACKUPS = 3;
 const MAX_TEXT = 1_950_000; // D1 values are capped at 2,000,000 bytes
 const SAVE_NAME = /^(\d+|settings|debug)\.celeste$/;
+// the GitHub Pages copy of the site talks to this storage from another address
+const ALLOWED_ORIGINS = ["https://strabicona.github.io"];
 const ISOLATION = {
 	"Cross-Origin-Embedder-Policy": "require-corp",
 	"Cross-Origin-Opener-Policy": "same-origin",
@@ -77,6 +79,31 @@ function json(data: unknown, status = 200) {
 	});
 }
 
+function corsHeaders(req: Request): Record<string, string> {
+	const origin = req.headers.get("Origin") || "";
+	if (!ALLOWED_ORIGINS.includes(origin)) return {};
+	return {
+		"Access-Control-Allow-Origin": origin,
+		"Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+		"Access-Control-Allow-Headers": "Authorization, Content-Type",
+		"Access-Control-Max-Age": "86400",
+		Vary: "Origin",
+	};
+}
+
+function withCors(req: Request, res: Response): Response {
+	const extra = corsHeaders(req);
+	const out = new Response(res.body, res);
+	for (const [k, v] of Object.entries(extra)) out.headers.set(k, v);
+	out.headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+	return out;
+}
+
+function bearer(req: Request): string | null {
+	const h = req.headers.get("Authorization") || "";
+	return h.startsWith("Bearer ") ? h.slice(7) : null;
+}
+
 function loginPage(message = ""): Response {
 	const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -107,7 +134,7 @@ export const onRequest = async (ctx: Ctx): Promise<Response> => {
 
 	// fail closed: no password configured means nobody gets in
 	if (!password) {
-		return new Response("Site password is not set up yet.", { status: 503 });
+		return withCors(request, new Response("Site password is not set up yet.", { status: 503 }));
 	}
 	const token = await authToken(password);
 
@@ -127,18 +154,33 @@ export const onRequest = async (ctx: Ctx): Promise<Response> => {
 		});
 	}
 
-	const cookie = readCookie(request, COOKIE);
-	if (!cookie || !timingSafeEqual(cookie, token)) {
-		if (url.pathname.startsWith("/api/")) return json({ error: "locked" }, 401);
-		return loginPage();
+	if (url.pathname.startsWith("/api/")) {
+		if (request.method === "OPTIONS") {
+			return withCors(request, new Response(null, { status: 204 }));
+		}
+		// password check for the GitHub Pages copy: returns the access token
+		if (url.pathname === "/api/login" && request.method === "POST") {
+			const body = (await request.json().catch(() => ({}))) as { password?: string };
+			if (!timingSafeEqual(await authToken(String(body.password || "")), token)) {
+				await new Promise((r) => setTimeout(r, 1500)); // slow down guessing
+				return withCors(request, json({ error: "wrong password" }, 401));
+			}
+			return withCors(request, json({ token }));
+		}
+		const given = bearer(request) || readCookie(request, COOKIE);
+		if (!given || !timingSafeEqual(given, token)) {
+			return withCors(request, json({ error: "locked" }, 401));
+		}
+		try {
+			return withCors(request, await api(request, env, url));
+		} catch (e) {
+			return withCors(request, json({ error: String(e) }, 500));
+		}
 	}
 
-	if (url.pathname.startsWith("/api/")) {
-		try {
-			return await api(request, env, url);
-		} catch (e) {
-			return json({ error: String(e) }, 500);
-		}
+	const cookie = readCookie(request, COOKIE);
+	if (!cookie || !timingSafeEqual(cookie, token)) {
+		return loginPage();
 	}
 
 	return withIsolation(await ctx.next());

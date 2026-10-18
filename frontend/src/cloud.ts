@@ -21,9 +21,52 @@ export class LockedError extends Error {
 	}
 }
 
+// Where the locked storage lives. The GitHub Pages copy of the site calls the
+// Cloudflare copy's storage; the access token comes from the password check.
+const API_BASE: string = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+const TOKEN_KEY = "my-celeste-access";
+
+function readToken(): string | null {
+	try {
+		return localStorage.getItem(TOKEN_KEY);
+	} catch {
+		return null;
+	}
+}
+
+export function hasAccess(): boolean {
+	return !!readToken();
+}
+
+export async function unlock(password: string): Promise<boolean> {
+	const res = await fetch(API_BASE + "/api/login", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ password }),
+	});
+	if (!res.ok) return false;
+	const { token } = (await res.json()) as { token: string };
+	try {
+		localStorage.setItem(TOKEN_KEY, token);
+	} catch {}
+	return true;
+}
+
+function forget() {
+	try {
+		localStorage.removeItem(TOKEN_KEY);
+	} catch {}
+}
+
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
-	const res = await fetch("/api/" + path, { credentials: "same-origin", ...init });
-	if (res.status === 401) throw new LockedError();
+	const headers = new Headers(init.headers);
+	const token = readToken();
+	if (token) headers.set("Authorization", "Bearer " + token);
+	const res = await fetch(API_BASE + "/api/" + path, { ...init, headers });
+	if (res.status === 401) {
+		forget();
+		throw new LockedError();
+	}
 	if (!res.ok) {
 		throw new Error(`Storage error ${res.status}: ${await res.text()}`);
 	}

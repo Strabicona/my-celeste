@@ -1,0 +1,212 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<EnableUnsafeBinaryFormatterSerialization>true</EnableUnsafeBinaryFormatterSerialization>
+		<ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+		<Nullable>disable</Nullable>
+		<TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+
+		<AssemblyName>CelesteLoader</AssemblyName>
+
+		<StartupObject>CelesteLoader</StartupObject>
+
+		<CompressionEnabled>false</CompressionEnabled>
+		<PublishTrimmed>false</PublishTrimmed>
+		<TrimMode>partial</TrimMode>
+		<RunAOTCompilation>true</RunAOTCompilation>
+		<WasmDedup>false</WasmDedup>
+		<WasmStripILAfterAOT>false</WasmStripILAfterAOT>
+
+		<NoWarn>IL2026,IL2045,IL2046,IL2055,IL2057,IL2060,IL2062,IL2065,IL2067,IL2070,IL2072,IL2075,IL2077,IL2080,IL2087,IL2090,IL2091,IL2104,IL2111</NoWarn>
+		<NoWarn>$(NoWarn),SYSLIB0003,SYSLIB0011,CS0169,CS0219,CS0649,CS1998,CS8981,CA2022,CA1416,CS0436,CS0626</NoWarn>
+
+		<WasmBuildNative>true</WasmBuildNative>
+		<WasmEnableThreads>true</WasmEnableThreads>
+		<WasmEnableSIMD>true</WasmEnableSIMD>
+		<WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
+		<WasmEnableWebcil>false</WasmEnableWebcil>
+		<WasmRunWasmOpt>true</WasmRunWasmOpt>
+
+		<WasmBitcodeCompileOptimizationFlag>-O3</WasmBitcodeCompileOptimizationFlag>
+		<WasmNativeStrip>false</WasmNativeStrip>
+		<WasmNativeDebugSymbols>true</WasmNativeDebugSymbols>
+
+		<WebAssemblyEnableStreamingResponse>true</WebAssemblyEnableStreamingResponse>
+
+		<!-- MAXIMUM_MEMORY is 4GiB - 1 wasm page (64kib) -->
+		<EmccExtraLDFlags>-sMIN_WEBGL_VERSION=2 -sWASMFS -sOFFSCREENCANVAS_SUPPORT -sMAXIMUM_MEMORY=4294901760 -sMALLOC=mimalloc</EmccExtraLDFlags>
+		<EmccLinkOptimizationFlag>-O3</EmccLinkOptimizationFlag>
+		<EmccCompileOptimizationFlag>-O3</EmccCompileOptimizationFlag>
+		<EmccEnvironment>web,worker</EmccEnvironment>
+
+		<EmsdkRoot>$(MSBuildProjectDirectory)\..\statics\emsdk\</EmsdkRoot>
+		<WasmCachePath>$(EmsdkRoot)\emscripten\cache\</WasmCachePath>
+
+		<__EmscriptenSdkToolsPath>$(EmsdkRoot)</__EmscriptenSdkToolsPath>
+		<__EmscriptenUpstreamBinPath>$(EmsdkRoot)bin/</__EmscriptenUpstreamBinPath>
+		<__EmscriptenUpstreamEmscriptenPath>$(EmsdkRoot)emscripten/</__EmscriptenUpstreamEmscriptenPath>
+		<__EmscriptenNodeToolsPath>$(EmsdkRoot)node/bin/node</__EmscriptenNodeToolsPath>
+		<__WasmClang>$(EmsdkRoot)emscripten/emcc</__WasmClang>
+
+        <MicrosoftNetCoreAppRuntimePackDir>$(MSBuildProjectDirectory)\..\statics\dotnet</MicrosoftNetCoreAppRuntimePackDir>
+        <MicrosoftNetCoreAppRuntimePackRidDir>$(MicrosoftNetCoreAppRuntimePackDir)\runtimes\browser-wasm</MicrosoftNetCoreAppRuntimePackRidDir>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<AOTWhitelist Include="System.Private.CoreLib" />
+		<AOTWhitelist Include="System.Collections" />
+		<AOTWhitelist Include="System.Collections.Concurrent" />
+		<AOTWhitelist Include="System.IO.Compression" />
+		<AOTWhitelist Include="System.IO.Compression.FileSystem" />
+		<AOTWhitelist Include="System.IO.Compression.ZipFile" />
+		<AOTWhitelist Include="System.IO.Hashing" />
+		<AOTWhitelist Include="mscorlib" />
+		<AOTWhitelist Include="netstandard" />
+
+		<AOTWhitelist Include="FNA" />
+		<AOTWhitelist Include="CelesteLoader" />
+		<AOTWhitelist Include="Celeste.Wasm.mm" />
+
+		<AOTWhitelist Include="KeraLua" />
+
+		<AOTWhitelist Include="Mono.Cecil" />
+		<AOTWhitelist Include="Mono.Cecil.Mdb" />
+		<AOTWhitelist Include="Mono.Cecil.Pdb" />
+		<AOTWhitelist Include="Mono.Cecil.Rocks" />
+		<AOTWhitelist Include="MonoMod.Core" />
+		<AOTWhitelist Include="MonoMod.Patcher" />
+		<AOTWhitelist Include="MonoMod.ILHelpers" />
+		<AOTWhitelist Include="MonoMod.RuntimeDetour" />
+		<AOTWhitelist Include="MonoMod.RuntimeDetour.HookGen" />
+	</ItemGroup>
+
+	<Target Name="UpdateRuntimePack" AfterTargets="ResolveFrameworkReferences">
+		<ItemGroup>
+			<ResolvedRuntimePack PackageDirectory="$(MicrosoftNetCoreAppRuntimePackDir)"
+				Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
+		</ItemGroup>
+		<Message Text="Using custom runtime pack: %(ResolvedRuntimePack.PackageDirectory)" Importance="High" />
+	</Target>
+
+	<Target Name="BypassWasmAOTTrimCheck" BeforeTargets="_WasmAotCompileApp">
+		<PropertyGroup>
+			<PublishTrimmed>true</PublishTrimmed>
+		</PropertyGroup>
+		<Message Text="Bypassing wasm AOT trim check" Importance="High" />
+	</Target>
+
+	<Target Name="AOTOnlyCorlib" BeforeTargets="_WasmAotCompileApp">
+		<PropertyGroup>
+			<_AOTWhitelist>|@(AOTWhitelist, '|')|</_AOTWhitelist>
+		</PropertyGroup>
+		<ItemGroup>
+			<_AOT_InternalForceInterpretAssemblies Include="@(_WasmAssembliesInternal)" Condition="!$([System.String]::new('$(_AOTWhitelist)').Contains('|%(Filename)|'))" />
+		</ItemGroup>
+
+		<Message Text="AOT filter enabled: only whitelist assemblies are AOT-compiled" Importance="High" />
+	</Target>
+
+	<ItemGroup>
+		<WasmOptConfigurationFlags Include="-O4 -O4 -O4 -g"></WasmOptConfigurationFlags>
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- FNA -->
+		<NativeFileReference Include="..\statics\SDL3.a" />
+		<NativeFileReference Include="..\statics\FNA3D.a" />
+		<NativeFileReference Include="..\statics\libmojoshader.a" />
+		<NativeFileReference Include="..\statics\FAudio.a" />
+
+		<!-- FMOD -->
+		<NativeFileReference Include="fmod\fmodstudio.a" />
+		<NativeFileReference Include="fmod\fmod.a" />
+
+		<!-- MonoMod -->
+		<NativeFileReference Include="..\statics\liba.o" />
+		<NativeFileReference Include="..\statics\hot_reload_detour.o" />
+
+		<!-- WASMFS + SDL fixes -->
+		<NativeFileReference Include="Emscripten.c" />
+		<NativeFileReference Include="__Native.c" />
+
+		<!-- Everest -->
+		<NativeFileReference Include="lua54.a" />
+		<NativeFileReference Include="fmod_SDL.c" />
+
+		<!-- Steam -->
+		<NativeFileReference Include="..\statics\libcrypto.a" />
+		<NativeFileReference Include="..\SteamKit2.WASM\SteamKit\SteamKit2\SteamKit2\NativeCrypto.c" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- <Compile Remove="Steam.cs" /> -->
+		<ProjectReference Include="..\FNA\FNA.Core.csproj" />
+
+		<ProjectReference Include="..\corefier\NETCoreifier.csproj" />
+		<ProjectReference Include="..\patcher\Celeste.Wasm.mm.csproj" />
+		<ProjectReference Include="..\Steamworks\Steamworks.NET.csproj" />
+
+		<!-- MonoMod -->
+		<ProjectReference Include="..\MonoMod\src\MonoMod.RuntimeDetour\MonoMod.RuntimeDetour.csproj" />
+		<ProjectReference Include="..\MonoMod\src\MonoMod.RuntimeDetour.HookGen\MonoMod.RuntimeDetour.HookGen.csproj" />
+
+		<!-- Everest -->
+		<ProjectReference Include="..\MonoMod\src\MonoMod.Patcher\MonoMod.Patcher.csproj" />
+		<ProjectReference Include="..\MonoMod\external\iced.csproj" />
+		<ProjectReference Include="..\NLua\build\net6.0\NLua.net6.0.csproj" />
+
+		<PackageReference Include="System.Security.Permissions" Version="9.0.1" />
+		<PackageReference Include="System.Threading.AccessControl" Version="9.0.1" />
+		<PackageReference Include="YamlDotNet" Version="16.1.3" />
+		<PackageReference Include="Jdenticon-net" Version="3.1.2" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="MAB.DotIgnore" Version="3.0.2" />
+	</ItemGroup>
+
+	<Target Name="BeforeBuild">
+		<Exec Command="bash '$(MSBuildProjectDirectory)/../replaceruntime.sh'" />
+		<Message Importance="High" Text="Replaced runtime" />
+	</Target>
+
+	<Target Name="HackMonoPinvokeTable" BeforeTargets="_WasmCompileNativeSourceFiles" DependsOnTargets="_GenerateManagedToNative">
+		<Exec Command="sed -i $(_WasmPInvokeTablePath) -e 's/Celeste_Wasm_mm/Celeste/g' -e 's/Celeste.Wasm.mm/Celeste/g'" />
+		<Message Importance="High" Text="PInvoke table hacked" />
+	</Target>
+
+	<!-- do not touch unless you like debugging -->
+	<Target Name="ChangeClang" DependsOnTargets="_InitializeCommonProperties" BeforeTargets="_SetupEmscripten">
+		<PropertyGroup>
+			<EmscriptenSdkToolsPath>$(__EmscriptenSdkToolsPath)</EmscriptenSdkToolsPath>
+			<EmscriptenUpstreamBinPath>$(__EmscriptenUpstreamBinPath)</EmscriptenUpstreamBinPath>
+			<EmscriptenUpstreamEmscriptenPath>$(__EmscriptenUpstreamEmscriptenPath)</EmscriptenUpstreamEmscriptenPath>
+			<EmscriptenNodeToolsPath>$(__EmscriptenNodeToolsPath)</EmscriptenNodeToolsPath>
+			<WasmClang>$(__WasmClang)</WasmClang>
+		</PropertyGroup>
+		<ItemGroup>
+			<EmscriptenPrependPATH Remove="/usr/share/dotnet/packs/*" />
+			<EmscriptenPrependPATH Include="$(EmscriptenSdkToolsPath)" />
+			<EmscriptenPrependPATH Include="$(EmscriptenUpstreamBinPath)" />
+			<EmscriptenPrependPATH Include="$([MSBuild]::NormalizeDirectory($(EmscriptenSdkToolsPath), 'emscripten'))" />
+			<EmscriptenPrependPATH Include="$(EmscriptenNodeToolsPath)" />
+		</ItemGroup>
+	</Target>
+
+	<Target Name="ChangeClang2" DependsOnTargets="_GenerateManagedToNative" BeforeTargets="_WasmCompileNativeSourceFiles">
+		<PropertyGroup>
+			<EmscriptenSdkToolsPath>$(__EmscriptenSdkToolsPath)</EmscriptenSdkToolsPath>
+			<EmscriptenUpstreamBinPath>$(__EmscriptenUpstreamBinPath)</EmscriptenUpstreamBinPath>
+			<EmscriptenUpstreamEmscriptenPath>$(__EmscriptenUpstreamEmscriptenPath)</EmscriptenUpstreamEmscriptenPath>
+			<EmscriptenNodeToolsPath>$(__EmscriptenNodeToolsPath)</EmscriptenNodeToolsPath>
+			<WasmClang>$(__WasmClang)</WasmClang>
+		</PropertyGroup>
+		<ItemGroup>
+			<EmscriptenPrependPATH Remove="/usr/share/dotnet/packs/*" />
+			<EmscriptenPrependPATH Include="$(EmscriptenSdkToolsPath)" />
+			<EmscriptenPrependPATH Include="$(EmscriptenUpstreamBinPath)" />
+			<EmscriptenPrependPATH Include="$([MSBuild]::NormalizeDirectory($(EmscriptenSdkToolsPath), 'emscripten'))" />
+			<EmscriptenPrependPATH Include="$(EmscriptenNodeToolsPath)" />
+			<EmscriptenEnvVars Include="PATH=$(EmscriptenSdkToolsPath):$(EmscriptenUpstreamBinPath):$([MSBuild]::NormalizeDirectory($(EmscriptenSdkToolsPath), 'emscripten')):$(EmscriptenNodeToolsPath):$(PATH)" />
+		</ItemGroup>
+	</Target>
+</Project>

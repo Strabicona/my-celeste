@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="robots" content="noindex" />
+		<title>Signing in...</title>
+		<style>
+			body {
+				background: #11111b;
+				color: #cdd6f4;
+				font-family: system-ui, sans-serif;
+				display: grid;
+				place-items: center;
+				min-height: 100vh;
+				margin: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<p id="msg">Signing in...</p>
+		<script>
+			// Google sends the browser back here with the sign-in token in the
+			// address fragment. This page has no isolation headers, so it works with
+			// Google's sign-in; it stores the token for the game page and leaves.
+			(function () {
+				var msg = document.getElementById("msg");
+				var params = new URLSearchParams(location.hash.slice(1));
+				history.replaceState(null, "", location.pathname);
+				var expected = null;
+				try {
+					expected = localStorage.getItem("my-celeste-auth-state");
+				} catch (e) {}
+				var state = params.get("state") || "";
+				if (params.get("error")) {
+					msg.textContent = "Google sign-in was cancelled or failed: " + params.get("error");
+					return;
+				}
+				var token = params.get("access_token");
+				if (!token || !expected || state !== expected) {
+					msg.textContent = "Sign-in did not complete. Close this and try again.";
+					return;
+				}
+				var seconds = Number(params.get("expires_in") || "3600");
+				try {
+					localStorage.removeItem("my-celeste-auth-state");
+					localStorage.setItem(
+						"my-celeste-token",
+						JSON.stringify({ token: token, expiresAt: Date.now() + seconds * 1000 })
+					);
+				} catch (e) {
+					msg.textContent = "Could not store the sign-in: " + e;
+					return;
+				}
+				if (state.indexOf("popup.") === 0) {
+					msg.textContent = "Signed in. You can close this window.";
+					window.close();
+					return;
+				}
+				var back = null;
+				try {
+					back = sessionStorage.getItem("my-celeste-return");
+				} catch (e) {}
+				if (!back || new URL(back).origin !== location.origin) back = "../";
+				location.replace(back);
+			})();
+		</script>
+	</body>
+</html>

@@ -1,0 +1,17 @@
+bin
+obj
+/statics
+/emsdk
+
+/FNA
+/MonoMod
+/NLua
+/SteamKit2.WASM
+
+/node_modules
+/frontend/public/_framework
+/frontend/public/content
+/frontend/dist
+
+analytics_tag
+.DS_Store

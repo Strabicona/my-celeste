@@ -32,14 +32,27 @@ export const LogView: Component<{ scrolling: boolean }> = function () {
 
 	this.mount = () => {
 		const logroot = this.root as HTMLElement;
-		const frag = document.createDocumentFragment();
+		// Only the newest lines are kept, and the page only draws them while the
+		// log panel is actually visible. Before, every line was kept forever and
+		// re-measured 4 times a second, so the page got slower the longer you played.
+		const MAX_LINES = 300;
+		let pending: { color: string; log: string }[] = [];
 
-		loglisteners.push((x) => frag.append(create(x.color, x.log)));
+		loglisteners.push((x) => {
+			pending.push(x);
+			if (pending.length > MAX_LINES)
+				pending.splice(0, pending.length - MAX_LINES);
+		});
 		setInterval(() => {
-			if (frag.children.length > 0) {
-				logroot.appendChild(frag);
-				logroot.scrollTop = logroot.scrollHeight;
-			}
+			if (pending.length === 0) return;
+			if (logroot.offsetParent === null || logroot.clientHeight === 0) return;
+			const frag = document.createDocumentFragment();
+			for (const x of pending) frag.append(create(x.color, x.log));
+			pending = [];
+			logroot.appendChild(frag);
+			while (logroot.childElementCount > MAX_LINES)
+				logroot.firstElementChild!.remove();
+			logroot.scrollTop = logroot.scrollHeight;
 		}, 250);
 	};
 

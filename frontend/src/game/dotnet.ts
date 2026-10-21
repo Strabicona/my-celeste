@@ -42,6 +42,8 @@ function proxyConsole(name: string, color: string) {
 			logger({ color, log: str });
 		}
 		logs.push(str);
+		// keep the log history from growing forever during long sessions
+		if (logs.length > 2500) logs.splice(0, logs.length - 2000);
 	};
 	return old;
 }

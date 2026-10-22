@@ -222,6 +222,29 @@ public static partial class CelesteLoader
         return Task.Delay(0);
     }
 
+    // Reports the game's own frames-per-second count (Monocle.Engine.FPS) twice a
+    // second, for the FPS counter on the page. Only reads it; the game is untouched.
+    [JSExport]
+    internal static Task WatchFps([JSMarshalAs<JSType.Function<JSType.Number, JSType.Boolean>>] Func<double, bool> callback)
+    {
+        return Task.Run(async () =>
+        {
+            FieldInfo fps = null;
+            while (true)
+            {
+                try
+                {
+                    if (fps == null && celeste != null)
+                        fps = celeste.GetType("Monocle.Engine")?.GetField("FPS", BindingFlags.Static | BindingFlags.Public);
+                }
+                catch { }
+                double value = fps != null ? (int)fps.GetValue(null) : -1;
+                if (callback(value)) break;
+                await Task.Delay(500);
+            }
+        });
+    }
+
     [JSExport]
     internal static Task WatchMemoryUsage([JSMarshalAs<JSType.Function<JSType.Number, JSType.Boolean>>] Func<double, bool> callback)
     {

@@ -13,12 +13,14 @@ export const gameState: Stateful<{
 	playing: boolean;
 	hasEverest: boolean;
 	memory: number;
+	fps: number;
 }> = $state({
 	ready: false,
 	initting: false,
 	playing: false,
 	hasEverest: false,
 	memory: -1,
+	fps: -1,
 });
 (globalThis as any).gameState = gameState;
 export const loglisteners: ((log: Log) => void)[] = [];
@@ -488,6 +490,18 @@ export async function UploadSteamCloud() {
 
 const SEAMLESSCOUNT = 5;
 
+function monitorFps(): () => void {
+	let stop = false;
+	exports.CelesteLoader.WatchFps((fps: number) => {
+		gameState.fps = stop ? -1 : fps;
+		return stop;
+	});
+	return () => {
+		stop = true;
+		gameState.fps = -1;
+	};
+}
+
 function monitorMem(): () => void {
 	let stop = false;
 	exports.CelesteLoader.WatchMemoryUsage((mem: number) => {
@@ -503,6 +517,7 @@ export async function play() {
 	gameState.initting = true;
 
 	let stopMonitoring = monitorMem();
+	let stopFps = monitorFps();
 
 	console.debug("Init...");
 	const before = performance.now();
@@ -523,6 +538,7 @@ export async function play() {
 	await exports.CelesteLoader.MainLoop();
 
 	stopMonitoring();
+	stopFps();
 
 	console.debug("Cleanup...");
 	await exports.CelesteLoader.Cleanup();

@@ -136,9 +136,19 @@ export const GameView: Component<
 
 		#fps {
 			position: absolute;
-			top: 0;
-			right: 0;
+			top: 0.4em;
+			right: 0.5em;
 			z-index: 2;
+			padding: 0.1em 0.45em;
+			border-radius: 0.4em;
+			background: rgba(0, 0, 0, 0.55);
+			color: #fff;
+			font-family: var(--font-mono);
+			font-size: 0.85em;
+			pointer-events: none;
+		}
+		#fps.hidden {
+			display: none;
 		}
 	`;
 	const notRunning = use(gameState.playing, (x) =>
@@ -161,6 +171,9 @@ export const GameView: Component<
 				<Loader />
 			</div>
 			<div class={notRunning}>Game not running.</div>
+			<div id="fps" class={use(gameState.fps, (x) => (x >= 0 ? "" : "hidden"))}>
+				{use(gameState.fps, (x) => `${x} FPS`)}
+			</div>
 			<canvas
 				id="canvas"
 				class={canvas}

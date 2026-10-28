@@ -22,7 +22,7 @@ import {
 } from "./game/dotnet";
 import { SteamLogin, steamState } from "./steam";
 import { gameInfo, hasAccess, LockedError, unlock } from "./cloud";
-import { downloadGame, localGameVersion, removeLocalGame, uploadGame } from "./cloudgame";
+import { downloadGame, gameKey, localGameVersion, removeLocalGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromDroppedFolder,
 	copySavesFromFolder,
@@ -163,7 +163,7 @@ const CloudIntro: Component<
 	this.showProgress = false;
 	this.needsSetup = false;
 
-	const run = async () => {
+	const run = async (attempt = 1): Promise<void> => {
 		this.busy = true;
 		this.status = "Loading your save...";
 		try {
@@ -174,7 +174,7 @@ const CloudIntro: Component<
 			const local = await localGameVersion();
 			// only reuse this browser's files if they match the online copy;
 			// with no online copy at all, first-time setup runs again
-			if (initialHasContent && initialIsPatched && game && local === game.version) {
+			if (initialHasContent && initialIsPatched && game && local === gameKey(game)) {
 				startSaveSync();
 				this["on:next"]("done");
 				return;
@@ -205,10 +205,17 @@ const CloudIntro: Component<
 				this.status = "Enter the password again.";
 				return;
 			}
+			// Chrome briefly refuses a browser-storage file that changed while it
+			// was being read (another tab, or a save finishing): wait, try again
+			if ((e as DOMException)?.name === "InvalidStateError" && attempt < 4) {
+				this.status = "A game file was busy, trying again...";
+				await new Promise((r) => setTimeout(r, 1500 * attempt));
+				return run(attempt + 1);
+			}
 			this.status = "Something went wrong: " + e;
 		}
 	};
-	if (!this.locked) queueMicrotask(run);
+	if (!this.locked) queueMicrotask(() => run());
 
 	const tryUnlock = async () => {
 		this.busy = true;

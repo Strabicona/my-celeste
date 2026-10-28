@@ -31,6 +31,13 @@ export async function localGameVersion(): Promise<string | null> {
 	return new TextDecoder().decode(bytes).trim() || null;
 }
 
+// What this browser stores to remember which online copy it has: the copy's
+// name plus its piece count, so a fix added onto the same copy (extra pieces)
+// is downloaded again by every device instead of being skipped.
+export function gameKey(info: { version: string; pieces: number }): string {
+	return `${info.version}+${info.pieces}`;
+}
+
 async function setLocalGameVersion(version: string) {
 	const f = await rootFolder.getFileHandle(VERSION_FILE, { create: true });
 	const w = await f.createWritable();
@@ -123,7 +130,7 @@ export async function uploadGame(onProgress: (fraction: number) => void) {
 	await Promise.all(inflight);
 
 	await commitGame({ version, pieces: index, size: total });
-	await setLocalGameVersion(version);
+	await setLocalGameVersion(gameKey({ version, pieces: index }));
 }
 
 export async function downloadGame(
@@ -158,5 +165,5 @@ export async function downloadGame(
 	});
 	await extractTar(stream, rootFolder);
 	await rootFolder.getFileHandle(".ContentExists", { create: true });
-	await setLocalGameVersion(info.version);
+	await setLocalGameVersion(gameKey(info));
 }

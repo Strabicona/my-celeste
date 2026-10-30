@@ -163,7 +163,8 @@ const CloudIntro: Component<
 	this.showProgress = false;
 	this.needsSetup = false;
 
-	const run = async (attempt = 1): Promise<void> => {
+	// fresh = ignore this browser's copy of the game and download it again
+	const run = async (attempt = 1, fresh = false): Promise<void> => {
 		this.busy = true;
 		this.status = "Loading your save...";
 		try {
@@ -171,7 +172,7 @@ const CloudIntro: Component<
 			await pullSaves();
 
 			const game = await gameInfo();
-			const local = await localGameVersion();
+			const local = fresh ? null : await localGameVersion();
 			// only reuse this browser's files if they match the online copy;
 			// with no online copy at all, first-time setup runs again
 			if (initialHasContent && initialIsPatched && game && local === gameKey(game)) {
@@ -210,7 +211,13 @@ const CloudIntro: Component<
 			if ((e as DOMException)?.name === "InvalidStateError" && attempt < 4) {
 				this.status = "A game file was busy, trying again...";
 				await new Promise((r) => setTimeout(r, 1500 * attempt));
-				return run(attempt + 1);
+				return run(attempt + 1, fresh);
+			}
+			// still busy after the retries: stop using this browser's copy and
+			// download the game again (the save is online, so nothing is lost)
+			if ((e as DOMException)?.name === "InvalidStateError" && !fresh) {
+				this.status = "Getting a fresh copy of the game...";
+				return run(1, true);
 			}
 			this.status = "Something went wrong: " + e;
 		}

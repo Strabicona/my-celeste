@@ -1,3 +1,5 @@
+// first: one tab at a time (see onetab.ts) — must finish before anything touches the game files
+import "./onetab";
 import "dreamland";
 import "./styles.css";
 import { Main } from "./main";

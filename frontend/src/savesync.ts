@@ -155,6 +155,11 @@ async function syncOnce(urgent = false, keepalive = false) {
 }
 
 let started = false;
+// true once the save has been loaded and is being kept in step (used before
+// handing the game to another tab, so an old copy is never sent)
+export function isSaveSyncRunning() {
+	return started;
+}
 export function startSaveSync() {
 	if (started) return;
 	started = true;

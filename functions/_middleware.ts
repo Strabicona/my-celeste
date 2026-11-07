@@ -2,9 +2,10 @@
 //
 // Every request to the site passes through here. Without the right cookie you
 // only get the password page; with it you get the site, the game engine, and
-// the storage API below. Storage is five free D1 databases (500 MB each on the
+// the storage API below. Storage is ten free D1 databases (500 MB each on the
 // free plan): the saves (with their last 3 backups) live in DB0, the game
-// archive is split into 1.4 MB pieces spread across DB1-DB4.
+// archive is split into 1.4 MB pieces spread across DB1-DB4, and the mod packs
+// (see PACK_DBS) use DB5-DB9 the same way.
 //
 // Everything is stored as base64 text: D1 hands binary columns back as plain
 // number arrays, which would cost more processing time than the free plan
@@ -17,6 +18,11 @@ interface Env {
 	DB2: D1Database;
 	DB3: D1Database;
 	DB4: D1Database;
+	DB5: D1Database;
+	DB6: D1Database;
+	DB7: D1Database;
+	DB8: D1Database;
+	DB9: D1Database;
 	ASSETS: Fetcher;
 }
 
@@ -25,7 +31,9 @@ type Ctx = EventContext<Env, string, unknown>;
 const COOKIE = "mc_auth";
 const KEEP_BACKUPS = 3;
 const MAX_TEXT = 1_950_000; // D1 values are capped at 2,000,000 bytes
-const SAVE_NAME = /^(\d+|settings|debug)\.celeste$/;
+// a save file name, optionally behind a link's prefix ("sj~0.celeste"). Everest's
+// own files (0-modsave-…, modsettings-…) are allowed too.
+const SAVE_NAME = /^(?:[a-z]{2,6}~)?[A-Za-z0-9 _.'+\-]{1,100}\.celeste$/;
 // the GitHub Pages copy of the site talks to this storage from another address
 const ALLOWED_ORIGINS = ["https://strabicona.github.io"];
 const ISOLATION = {
@@ -317,5 +325,90 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 		}
 	}
 
+	// --- packs: extra file bundles next to the game (Everest, mod packs) ----------
+	// same piece scheme as the game, stored in table pack_pieces
+	if (path[0] === "pack") {
+		const name = path[1];
+		const dbs = PACK_DBS(env)[name];
+		if (!dbs) return json({ error: "unknown pack" }, 404);
+		const key = "pack:" + name;
+
+		if (path[2] === "info" && req.method === "GET") {
+			const row = await db.prepare("SELECT value FROM meta WHERE key = ?").bind(key).first<{ value: string }>();
+			return json(row ? JSON.parse(row.value) : null);
+		}
+
+		if (path[2] === "piece" && (req.method === "GET" || req.method === "PUT")) {
+			const version = path[3];
+			const index = Number(path[4]);
+			if (!/^[a-z0-9-]{4,40}$/.test(version) || !Number.isInteger(index) || index < 0)
+				return json({ error: "bad piece" }, 400);
+			const target = dbs[index % dbs.length];
+			if (req.method === "GET") {
+				const row = await target
+					.prepare("SELECT data FROM pack_pieces WHERE pack = ? AND version = ? AND idx = ?")
+					.bind(name, version, index)
+					.first<{ data: string }>();
+				if (!row) return json({ error: "not found" }, 404);
+				return new Response(row.data, {
+					headers: {
+						"Content-Type": "text/plain",
+						"Cache-Control": "private, max-age=31536000, immutable",
+					},
+				});
+			}
+			const data = await req.text(); // base64
+			if (data.length > MAX_TEXT) return json({ error: "too big" }, 413);
+			await target
+				.prepare(
+					"INSERT INTO pack_pieces (pack, version, idx, data) VALUES (?, ?, ?, ?) ON CONFLICT(pack, version, idx) DO UPDATE SET data = excluded.data"
+				)
+				.bind(name, version, index, data)
+				.run();
+			return json({ ok: true });
+		}
+
+		// POST /api/pack/<name>/start: forget the old copy of this pack before a new upload
+		if (path[2] === "start" && req.method === "POST") {
+			await db.prepare("DELETE FROM meta WHERE key = ?").bind(key).run();
+			for (const d of dbs) {
+				await d.prepare(PACK_TABLE).run();
+				for (;;) {
+					const res = await d
+						.prepare(
+							"DELETE FROM pack_pieces WHERE rowid IN (SELECT rowid FROM pack_pieces WHERE pack = ? LIMIT 50)"
+						)
+						.bind(name)
+						.run();
+					if (!res.meta.changes) break;
+				}
+			}
+			return json({ ok: true });
+		}
+
+		// POST /api/pack/<name>/commit  body: {version, pieces, size, ...}
+		if (path[2] === "commit" && req.method === "POST") {
+			const info = (await req.json()) as Record<string, unknown>;
+			await db
+				.prepare(
+					"INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+				)
+				.bind(key, JSON.stringify({ ...info, uploaded: Date.now() }))
+				.run();
+			return json({ ok: true });
+		}
+	}
+
 	return json({ error: "not found" }, 404);
 }
+
+const PACK_TABLE =
+	"CREATE TABLE IF NOT EXISTS pack_pieces (pack TEXT NOT NULL, version TEXT NOT NULL, idx INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (pack, version, idx))";
+
+// which databases each pack is spread over
+const PACK_DBS = (env: Env): Record<string, D1Database[]> => ({
+	everest: [env.DB0], // Everest, patched once in a browser (small)
+	everestzip: [env.DB0], // the Everest download itself, so no browser needs a proxy for it
+	"mods-sj": [env.DB5, env.DB6, env.DB7, env.DB8], // Strawberry Jam + its helpers + skin
+	"mods-ds": [env.DB9], // D-Sides + skin
+});

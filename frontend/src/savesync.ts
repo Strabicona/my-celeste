@@ -8,16 +8,33 @@
 //   the game finishes writing it. The server keeps the previous version as a
 //   backup, and only the newest 3 backups per save file.
 import { readAllEntries, rootFolder } from "./fs";
-import { cloudState, getSave, listSaves, LockedError, putSave } from "./cloud";
+import { cloudState, CloudSave, getSave, listSaves, LockedError, putSave } from "./cloud";
+import { profile, PROFILES } from "./profile";
 import { readFileRetry } from "./readretry";
 
 const SAVES_PATH = ["Celeste", "Saves"];
 const POLL_MS = 2000;
 
-// Vanilla save files only: numbered slots, settings, and the debug slot.
-// Everest mod files (0-modsave…, modsettings-…) are never synced.
+// Every save file the game writes: numbered slots, settings, debug, and
+// Everest's mod files (0-modsave-…, modsettings-…), which hold mod progress.
 export function isSyncedSave(name: string) {
-	return /^(\d+|settings|debug)\.celeste$/.test(name);
+	return /^[A-Za-z0-9 _.'+\-]{1,100}\.celeste$/.test(name);
+}
+
+// Each link keeps its own saves online, behind its own name prefix
+// ("sj~0.celeste"). The old saves without a prefix stay untouched online and
+// only seed a link the first time it is used.
+const PREFIX = profile?.savePrefix ?? "";
+const VANILLA = /^(\d+|settings|debug)\.celeste$/;
+const PROFILE_MARKER = ".SaveProfile";
+
+type Remote = { name: string; cloud: string; modified: number };
+
+function ownRemote(list: CloudSave[], prefix = PREFIX): Remote[] {
+	return list
+		.filter((x) => (prefix ? x.name.startsWith(prefix) : !x.name.includes("~")))
+		.map((x) => ({ name: x.name.slice(prefix.length), cloud: x.name, modified: x.modified }))
+		.filter((x) => isSyncedSave(x.name));
 }
 
 async function savesDir(): Promise<FileSystemDirectoryHandle> {
@@ -70,20 +87,88 @@ function equalBytes(a: Uint8Array, b: Uint8Array) {
 }
 
 export async function hasCloudSaves(): Promise<boolean> {
-	return (await listSaves()).some((x) => isSyncedSave(x.name));
+	return ownRemote(await listSaves()).length > 0;
+}
+
+async function readMarker(): Promise<string | null> {
+	try {
+		const f = await rootFolder.getFileHandle(PROFILE_MARKER, { create: false });
+		return (await (await f.getFile()).text()).trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+async function writeMarker(value: string) {
+	const f = await rootFolder.getFileHandle(PROFILE_MARKER, { create: true });
+	const w = await f.createWritable();
+	await w.write(value);
+	await w.close();
+}
+
+// The browser's save folder belongs to the link last played here. Before a
+// different link uses it, anything newer than that link's online copy is sent
+// up, then the folder is emptied.
+async function switchSaveFolder(all: CloudSave[]) {
+	const mine = profile?.id ?? "base";
+	const owner = (await readMarker()) ?? "base"; // older browsers: unprefixed saves
+	if (owner === mine) return;
+	const ownerPrefix =
+		owner === "base"
+			? ""
+			: (Object.values(PROFILES).find((p) => p.id === owner)?.savePrefix ?? null);
+	const local = await readLocal();
+	if (ownerPrefix !== null) {
+		const remote = new Map(ownRemote(all, ownerPrefix).map((r) => [r.name, r]));
+		for (const [name, l] of local) {
+			const r = remote.get(name);
+			if (r && r.modified >= l.lastModified) continue;
+			const snap = await readFileRetry(l.handle);
+			if (r && equalBytes(snap.bytes, await getSave(r.cloud))) continue;
+			await putSave(ownerPrefix + name, snap.bytes);
+			console.log(`[saves] sent ${name} back to the ${owner} saves before switching`);
+		}
+	}
+	const dir = await savesDir();
+	for (const name of local.keys()) {
+		try {
+			await dir.removeEntry(name);
+		} catch {}
+	}
+	synced.clear();
+	lastSeen.clear();
+	await writeMarker(mine);
 }
 
 export async function pullSaves(): Promise<void> {
-	const remote = (await listSaves()).filter((x) => isSyncedSave(x.name));
-	const local = await readLocal();
+	const all = await listSaves();
+	await switchSaveFolder(all);
+	const remote = ownRemote(all);
 	const dir = await savesDir();
+	if (remote.length === 0 && PREFIX) {
+		// first time on this link: start from the old saves (slots + settings);
+		// the sync loop then sends them up under this link's names
+		const local = await readLocal();
+		for (const r of ownRemote(all, "")) {
+			if (!VANILLA.test(r.name) || local.has(r.name)) continue;
+			const data = await getSave(r.cloud);
+			const handle = await dir.getFileHandle(r.name, { create: true });
+			const w = await handle.createWritable();
+			await w.write(data);
+			await w.close();
+			console.log(`[saves] started this link from your save ${r.name}`);
+		}
+		cloudState.lastSaved = "loaded";
+		return;
+	}
+	const local = await readLocal();
 
 	for (const r of remote) {
 		const l = local.get(r.name);
 		if (l && l.lastModified > r.modified) {
 			const [snap, rb] = await Promise.all([
 				readFileRetry(l.handle),
-				getSave(r.name),
+				getSave(r.cloud),
 			]);
 			if (!equalBytes(snap.bytes, rb)) {
 				console.log(`[saves] keeping newer browser copy of ${r.name}`);
@@ -92,7 +177,7 @@ export async function pullSaves(): Promise<void> {
 			synced.set(r.name, { size: snap.size, lastModified: snap.lastModified });
 			continue;
 		}
-		const data = await getSave(r.name);
+		const data = await getSave(r.cloud);
 		const handle = await dir.getFileHandle(r.name, { create: true });
 		const w = await handle.createWritable();
 		await w.write(data);
@@ -132,7 +217,7 @@ async function syncOnce(urgent = false, keepalive = false) {
 		cloudState.syncing = true;
 		for (const [name, file] of pending) {
 			const snap = await readFileRetry(file.handle);
-			await putSave(name, snap.bytes, keepalive);
+			await putSave(PREFIX + name, snap.bytes, keepalive);
 			synced.set(name, { size: snap.size, lastModified: snap.lastModified });
 			console.log(`[saves] sent ${name} to the cloud`);
 		}

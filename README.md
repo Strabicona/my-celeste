@@ -38,3 +38,11 @@ For a deeper dive into how we made this and [the Terraria web port](https://gith
 
 1. Fix any issues with the hooks
 2. Make a PR!
+
+## my-celeste: the two links
+
+- `…/?mods=sj` plays with Strawberry Jam, `…/?mods=dsides` with Monika's D-Sides. Both use the same game,
+  both get the foxhair (Bangs Only) skin, and each keeps its own saves online.
+- The mod packs are put online by `.github/workflows/upload-mods.yml` (runs after every deploy, skips
+  packs that are already up to date). Which mods go in each pack: `PACKS` in `tools/upload_packs.py`.
+- Everest is patched into the game once, by the first browser that opens a link, and then stored online.

@@ -171,3 +171,58 @@ export async function commitGame(info: { version: string; pieces: number; size: 
 		body: JSON.stringify(info),
 	});
 }
+
+// --- packs (Everest, mod packs) ------------------------------------------------
+// Same piece scheme as the game archive, one named bundle each.
+
+export type PackInfo = {
+	version: string;
+	pieces: number;
+	size: number;
+	uploaded: number;
+	game?: string; // for the Everest pack: which game copy it was patched from
+};
+
+export async function packInfo(name: string): Promise<PackInfo | null> {
+	return (await call(`pack/${name}/info`)).json();
+}
+
+export async function startPackUpload(name: string) {
+	await call(`pack/${name}/start`, { method: "POST" });
+}
+
+async function retry<T>(f: () => Promise<T>): Promise<T> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await f();
+		} catch (e) {
+			if (e instanceof LockedError || attempt >= 4) throw e;
+			await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+		}
+	}
+}
+
+export async function putPackPiece(name: string, version: string, index: number, data: Uint8Array) {
+	const body = toBase64(data);
+	await retry(() =>
+		call(`pack/${name}/piece/${version}/${index}`, {
+			method: "PUT",
+			headers: { "Content-Type": "text/plain" },
+			body,
+		})
+	);
+}
+
+export async function getPackPiece(name: string, version: string, index: number): Promise<Uint8Array> {
+	return retry(async () =>
+		fromBase64(await (await call(`pack/${name}/piece/${version}/${index}`)).text())
+	);
+}
+
+export async function commitPack(name: string, info: Record<string, unknown>) {
+	await call(`pack/${name}/commit`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(info),
+	});
+}

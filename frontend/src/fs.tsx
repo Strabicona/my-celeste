@@ -319,7 +319,9 @@ async function createEntry(
 export function createTar(
 	folder: FileSystemDirectoryHandle,
 	callback?: (type: "directory" | "file", name: string) => void,
-	onlyTopLevel?: string[]
+	onlyTopLevel?: string[],
+	// optional finer filter on the full path ("Celeste/Everest/x.dll")
+	keep?: (path: string) => boolean
 ): ReadableStream {
 	const archive = tar.pack();
 
@@ -327,6 +329,7 @@ export function createTar(
 		for await (const [name, entry] of folder) {
 			if (onlyTopLevel && pathPrefix === "" && !onlyTopLevel.includes(name))
 				continue;
+			if (keep && !keep(pathPrefix + name)) continue;
 			if (callback) callback(entry.kind, name);
 
 			if (entry.kind == "file") {

@@ -22,6 +22,18 @@ import {
 } from "./game/dotnet";
 import { SteamLogin, steamState } from "./steam";
 import { gameInfo, hasAccess, LockedError, unlock } from "./cloud";
+import {
+	downloadPack,
+	keepEverest,
+	localPack,
+	packInfo,
+	packKey,
+	removeLocalEverest,
+	removeLocalMods,
+	setLocalPack,
+	uploadPack,
+} from "./cloudpacks";
+import { linkFor, profile, PROFILES } from "./profile";
 import { downloadGame, gameKey, localGameVersion, removeLocalGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromDroppedFolder,
@@ -172,23 +184,77 @@ const CloudIntro: Component<
 			await pullSaves();
 
 			const game = await gameInfo();
-			const local = fresh ? null : await localGameVersion();
-			// only reuse this browser's files if they match the online copy;
-			// with no online copy at all, first-time setup runs again
-			if (initialHasContent && initialIsPatched && game && local === gameKey(game)) {
-				startSaveSync();
-				this["on:next"]("done");
-				return;
-			}
-
 			if (game) {
-				// this browser has no game yet, or an older copy: fetch the current one
-				await removeLocalGame();
-				this.status = "Downloading the game...";
-				this.showProgress = true;
-				await downloadGame(game, (f) => (this.percent = f * 100));
+				const local = fresh ? null : await localGameVersion();
+				// only reuse this browser's files if they match the online copy
+				if (!(initialHasContent && initialIsPatched && local === gameKey(game))) {
+					// this browser has no game yet, or an older copy: fetch the current one
+					await removeLocalGame();
+					this.status = "Downloading the game...";
+					this.showProgress = true;
+					await downloadGame(game, (f) => (this.percent = f * 100));
+				}
+
+				// Everest, already patched into this game copy (made once, see below)
+				const ev = await packInfo("everest");
+				const evReady = !!ev && ev.game === gameKey(game);
+				if (evReady && (await localPack("everest")) !== packKey(ev!)) {
+					this.status = "Downloading Everest...";
+					this.showProgress = true;
+					await downloadPack("everest", ev!, (f) => (this.percent = f * 100));
+					await setLocalPack("everest", packKey(ev!));
+				}
+
+				// this link's mods
+				const mods = await packInfo(profile!.pack);
+				const wantMods = mods ? profile!.pack + ":" + packKey(mods) : null;
+				if ((await localPack("mods")) !== wantMods) {
+					await removeLocalMods();
+					if (mods) {
+						this.status = `Downloading ${profile!.label}...`;
+						this.showProgress = true;
+						await downloadPack(profile!.pack, mods, (f) => (this.percent = f * 100));
+						await setLocalPack("mods", wantMods);
+					}
+				}
+
 				this.status = "Starting the engine...";
 				await this.start();
+
+				if (!evReady) {
+					// one time only: patch Everest into the game here, then put the
+					// result online so every other browser just downloads it
+					this.showProgress = false;
+					this.status = "Installing Everest (one time, a few minutes)...";
+					const zip = await packInfo("everestzip");
+					if (zip) {
+						try {
+							await rootFolder.removeEntry("everest.zip");
+						} catch {}
+						await downloadPack("everestzip", zip, () => {});
+					}
+					let patched = false;
+					try {
+						await PatchCeleste(true);
+						patched = true;
+					} catch (e) {
+						// keep the game playable without mods rather than stuck
+						console.error("[everest] patching failed, starting without mods:", e);
+						await removeLocalEverest();
+					}
+					if (patched) {
+						this.status = "Sending Everest online (one time)...";
+						this.showProgress = true;
+						const made = await uploadPack(
+							"everest",
+							keepEverest,
+							{ game: gameKey(game) },
+							(f) => (this.percent = f * 100)
+						);
+						await setLocalPack("everest", packKey(made));
+					}
+				}
+
 				startSaveSync();
 				this["on:next"]("done-animated");
 				return;
@@ -222,7 +288,7 @@ const CloudIntro: Component<
 			this.status = "Something went wrong: " + e;
 		}
 	};
-	if (!this.locked) queueMicrotask(() => run());
+	if (!this.locked && profile) queueMicrotask(() => run());
 
 	const tryUnlock = async () => {
 		this.busy = true;
@@ -232,7 +298,8 @@ const CloudIntro: Component<
 				this.password = "";
 				this.locked = false;
 				this.status = "";
-				run();
+				if (profile) run();
+				else this.busy = false;
 			} else {
 				this.status = "Wrong password.";
 				this.busy = false;
@@ -245,6 +312,20 @@ const CloudIntro: Component<
 
 	return (
 		<div class="step">
+			{$if(
+				!profile,
+				<div class="step">
+					<p>Pick what to play. Each link keeps its own save.</p>
+					<Button type="primary" icon="left" disabled={false} on:click={() => location.assign(linkFor("sj"))}>
+						<Icon icon={iconFolderZip} />
+						{PROFILES.sj.label}
+					</Button>
+					<Button type="primary" icon="left" disabled={false} on:click={() => location.assign(linkFor("ds"))}>
+						<Icon icon={iconFolderZip} />
+						{PROFILES.ds.label}
+					</Button>
+				</div>
+			)}
 			{$if(
 				use(this.locked),
 				<form

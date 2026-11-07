@@ -28,3 +28,30 @@ database_id = "43ce646f-dd59-4933-bed6-9dd270e252a4"
 binding = "DB4"
 database_name = "my-celeste-game-4"
 database_id = "782357b9-6d31-4812-b1c0-5e64ec2110d0"
+
+# DB5-DB9 hold the mod packs: Strawberry Jam spread over DB5-DB8, D-Sides in DB9.
+# (Everest, patched once in the browser, sits in DB0 next to the saves.)
+[[d1_databases]]
+binding = "DB5"
+database_name = "my-celeste-mods-1"
+database_id = "4a31e058-88f3-4ef6-aa81-c96a7f50e39c"
+
+[[d1_databases]]
+binding = "DB6"
+database_name = "my-celeste-mods-2"
+database_id = "a0dcf072-914a-43e1-a85a-fa0d7b566da4"
+
+[[d1_databases]]
+binding = "DB7"
+database_name = "my-celeste-mods-3"
+database_id = "fb8ec574-d5da-44ce-9106-b4fda78025a4"
+
+[[d1_databases]]
+binding = "DB8"
+database_name = "my-celeste-mods-4"
+database_id = "bf4651e5-68f0-4985-b0e8-421a3f90a88f"
+
+[[d1_databases]]
+binding = "DB9"
+database_name = "my-celeste-mods-5"
+database_id = "d0c16449-67c6-4a04-a389-e71d0d26ddc2"

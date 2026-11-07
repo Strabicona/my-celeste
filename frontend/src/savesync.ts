@@ -93,7 +93,7 @@ export async function hasCloudSaves(): Promise<boolean> {
 async function readMarker(): Promise<string | null> {
 	try {
 		const f = await rootFolder.getFileHandle(PROFILE_MARKER, { create: false });
-		return (await (await f.getFile()).text()).trim() || null;
+		return new TextDecoder().decode((await readFileRetry(f)).bytes).trim() || null;
 	} catch {
 		return null;
 	}

@@ -149,6 +149,42 @@ try {
 // first-time setup state, decided by CloudIntro
 let copyPcSaves = false;
 
+// Patches Everest into this browser's game (once per game copy) and sends the
+// result online. If only the sending failed last time, the patched files are
+// still here and just the sending is tried again.
+async function setupEverest(
+	game: string,
+	status: (s: string) => void,
+	progress: (f: number) => void
+) {
+	const LOCAL = "local:" + game;
+	if ((await localPack("everest")) !== LOCAL) {
+		progress(-1);
+		status("Installing Everest (one time, a few minutes)...");
+		const zip = await packInfo("everestzip");
+		if (zip) {
+			try {
+				await rootFolder.removeEntry("everest.zip");
+			} catch {}
+			await downloadPack("everestzip", zip, () => {});
+		}
+		try {
+			await PatchCeleste(true);
+		} catch (e) {
+			// keep the game playable without mods rather than stuck
+			await removeLocalEverest();
+			throw e;
+		}
+		await setLocalPack("everest", LOCAL);
+		// let the engine finish writing the patched files before reading them
+		await new Promise((r) => setTimeout(r, 3000));
+	}
+	status("Sending Everest online (one time)...");
+	progress(0);
+	const made = await uploadPack("everest", keepEverest, { game }, progress);
+	await setLocalPack("everest", packKey(made));
+}
+
 const CloudIntro: Component<
 	{
 		"on:next": (type: "copy" | "done" | "done-animated") => void;
@@ -223,35 +259,15 @@ const CloudIntro: Component<
 
 				if (!evReady) {
 					// one time only: patch Everest into the game here, then put the
-					// result online so every other browser just downloads it
-					this.showProgress = false;
-					this.status = "Installing Everest (one time, a few minutes)...";
-					const zip = await packInfo("everestzip");
-					if (zip) {
-						try {
-							await rootFolder.removeEntry("everest.zip");
-						} catch {}
-						await downloadPack("everestzip", zip, () => {});
-					}
-					let patched = false;
+					// result online so every other browser just downloads it. Kept
+					// apart from the rest: a problem here never re-downloads the game.
 					try {
-						await PatchCeleste(true);
-						patched = true;
+						await setupEverest(gameKey(game), (s) => (this.status = s), (f) => {
+							this.showProgress = f >= 0;
+							if (f >= 0) this.percent = f * 100;
+						});
 					} catch (e) {
-						// keep the game playable without mods rather than stuck
-						console.error("[everest] patching failed, starting without mods:", e);
-						await removeLocalEverest();
-					}
-					if (patched) {
-						this.status = "Sending Everest online (one time)...";
-						this.showProgress = true;
-						const made = await uploadPack(
-							"everest",
-							keepEverest,
-							{ game: gameKey(game) },
-							(f) => (this.percent = f * 100)
-						);
-						await setLocalPack("everest", packKey(made));
+						console.error("[everest] one-time setup failed, will try again next time:", e);
 					}
 				}
 

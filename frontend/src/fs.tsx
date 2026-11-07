@@ -1,3 +1,4 @@
+import { readFileRetry } from "./readretry";
 import { Button, Icon } from "./ui/Button";
 
 import tar, { Headers as TarHeaders, Pack } from "tar-stream";
@@ -332,7 +333,20 @@ export function createTar(
 			if (keep && !keep(pathPrefix + name)) continue;
 			if (callback) callback(entry.kind, name);
 
-			if (entry.kind == "file") {
+			if (entry.kind == "file" && keep) {
+				// filtered archives hold files the game engine just wrote: read
+				// each one whole, waiting out a moment where it is still busy
+				const snap = await readFileRetry(entry);
+				await createEntry(
+					archive,
+					{
+						name: pathPrefix + name,
+						type: entry.kind,
+						size: snap.size,
+					},
+					new Blob([snap.bytes]).stream()
+				);
+			} else if (entry.kind == "file") {
 				const file = await entry.getFile();
 				const stream = file.stream();
 

@@ -329,7 +329,7 @@ const CloudIntro: Component<
 	return (
 		<div class="step">
 			{$if(
-				!profile,
+				use(this.locked, (l) => !l && !profile),
 				<div class="step">
 					<p>Pick what to play. Each link keeps its own save.</p>
 					<Button type="primary" icon="left" disabled={false} on:click={() => location.assign(linkFor("sj"))}>

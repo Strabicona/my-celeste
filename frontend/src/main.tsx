@@ -17,6 +17,11 @@ import iconCloudDone from "@ktibow/iconset-material-symbols/cloud-done";
 import iconUpload from "@ktibow/iconset-material-symbols/upload";
 import iconCloudOff from "@ktibow/iconset-material-symbols/cloud-off";
 import iconSettings from "@ktibow/iconset-material-symbols/settings";
+import iconSwap from "@ktibow/iconset-material-symbols/swap-horiz";
+import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
+import iconComputer from "@ktibow/iconset-material-symbols/computer";
+import { linkFor, profile, PROFILES } from "./profile";
+import { mountTouchControls } from "./touch";
 
 export const NAME = "webleste";
 
@@ -156,6 +161,45 @@ const TopBar: Component<
 					}}
 				/>
 				<Button
+					on:click={async () => {
+						const other = profile?.id === "sj" ? "ds" : "sj";
+						if (
+							gameState.playing &&
+							!confirm(
+								`Switch to ${PROFILES[other].label}? The game reloads; progress since your last save point is lost.`
+							)
+						)
+							return;
+						try {
+							await syncNow();
+						} catch {}
+						location.assign(linkFor(other));
+					}}
+					icon="left"
+					type="normal"
+					disabled={false}
+					title={"Switch mods: Strawberry Jam or D-Sides (each keeps its own save)"}
+				>
+					<Icon icon={iconSwap} />
+					<span>{profile ? profile.label : "Pick mods"}</span>
+				</Button>
+				<Button
+					on:click={() => {
+						store.controls = store.controls === "mobile" ? "pc" : "mobile";
+					}}
+					icon="left"
+					type="normal"
+					disabled={false}
+					title={"PC: keyboard/controller. Mobile: on-screen joystick and buttons."}
+				>
+					{$if(
+						use(store.controls, (c) => c === "mobile"),
+						<Icon icon={iconPhone} />,
+						<Icon icon={iconComputer} />
+					)}
+					<span>{use(store.controls, (c) => (c === "mobile" ? "Mobile" : "PC"))}</span>
+				</Button>
+				<Button
 					on:click={() => this.importInput.click()}
 					icon="left"
 					type="normal"
@@ -242,7 +286,10 @@ const TopBar: Component<
 				<Button
 					on:click={async () => {
 						try {
-							await this.canvas.requestFullscreen({ navigationUI: "hide" });
+							// Mobile mode: the whole game box, so the on-screen controls come along
+							const el =
+								store.controls === "mobile" ? this.canvas.parentElement! : this.canvas;
+							await el.requestFullscreen({ navigationUI: "hide" });
 						} catch {}
 					}}
 					icon="full"
@@ -333,6 +380,7 @@ export const Main: Component<
 	this.achievementsOpen = false;
 
 	this.mount = () => {
+		mountTouchControls(game as HTMLElement, this.canvas);
 		useChange([store.logs], (x) => {
 			this.logcontainer.style.height = `${x}px`;
 			this.logsize = x;

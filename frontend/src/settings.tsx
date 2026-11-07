@@ -1,4 +1,5 @@
 import { Switch } from "./ui/Switch";
+import { Button } from "./ui/Button";
 import { store } from "./store";
 import { TextField } from "./ui/TextField";
 import { analyticsEnabled, event } from "./analytics";
@@ -55,6 +56,7 @@ export const Settings: Component<
 					store.logs = (e.target as HTMLInputElement).checked ? 1 : -1;
 				}}
 			/>
+			<TouchSettings />
 			<WispServer />
 			<div>
 				<div style="margin-inline: 0.2rem; user-select: none;">
@@ -159,6 +161,57 @@ const AccentPicker: Component<{}> = function () {
 					)}
 				</button>
 			))}
+		</div>
+	);
+};
+
+// Mobile mode's joystick: fixed (movable) or following the thumb
+const TouchSettings: Component<{}, { floating: boolean }> = function () {
+	this.css = `
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-inline: 0.25rem;
+
+		.row {
+			display: flex;
+			gap: 0.5rem;
+			align-items: center;
+		}
+		.hint {
+			opacity: 0.7;
+			font-size: 0.9em;
+		}
+	`;
+	this.floating = store.joystickMode === "floating";
+	return (
+		<div>
+			<div style="user-select: none;">Mobile controls</div>
+			<Switch
+				title="Joystick follows my thumb (off: joystick stays where I put it)"
+				bind:on={use(this.floating)}
+				disabled={false}
+				on:change={(e: Event) => {
+					store.joystickMode = (e.target as HTMLInputElement).checked ? "floating" : "fixed";
+				}}
+			/>
+			{$if(
+				use(store.joystickMode, (m) => m === "fixed"),
+				<div class="row">
+					<Button
+						type="normal"
+						icon="none"
+						disabled={false}
+						on:click={() => {
+							store.controls = "mobile";
+							store.touchEdit = true;
+						}}
+					>
+						Move joystick
+					</Button>
+					<span class="hint">Close this, drag the joystick in the game, then tap "Done moving".</span>
+				</div>
+			)}
 		</div>
 	);
 };

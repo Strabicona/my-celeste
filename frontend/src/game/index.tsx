@@ -128,6 +128,13 @@ export const GameView: Component<
 			pointer-events: auto;
 		}
 
+		&:fullscreen {
+			aspect-ratio: auto;
+			width: 100vw;
+			height: 100vh;
+			background: black;
+		}
+
 		canvas:fullscreen {
 			border: none;
 			border-radius: 0;

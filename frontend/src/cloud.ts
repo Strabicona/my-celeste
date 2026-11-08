@@ -58,7 +58,7 @@ function forget() {
 	} catch {}
 }
 
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
+export async function call(path: string, init: RequestInit = {}): Promise<Response> {
 	const headers = new Headers(init.headers);
 	const token = readToken();
 	if (token) headers.set("Authorization", "Bearer " + token);

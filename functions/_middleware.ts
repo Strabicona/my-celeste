@@ -325,6 +325,23 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 		}
 	}
 
+	// --- error reports from the page (so problems on a phone can be read here) ---
+	// POST /api/report  body: {entries: [{time, step, message, device}]}; keeps the last 60
+	if (path[0] === "report" && req.method === "POST") {
+		const body = (await req.json().catch(() => null)) as { entries?: unknown[] } | null;
+		const incoming = (body?.entries || [])
+			.slice(0, 20)
+			.map((e) => JSON.stringify(e).slice(0, 4000))
+			.map((t) => JSON.parse(t.endsWith("}") ? t : JSON.stringify({ cut: t })));
+		const row = await db.prepare("SELECT value FROM meta WHERE key = 'errors'").first<{ value: string }>();
+		const all = [...(row ? JSON.parse(row.value) : []), ...incoming].slice(-60);
+		await db
+			.prepare("INSERT INTO meta (key, value) VALUES ('errors', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+			.bind(JSON.stringify(all))
+			.run();
+		return json({ ok: true });
+	}
+
 	// --- packs: extra file bundles next to the game (Everest, mod packs) ----------
 	// same piece scheme as the game, stored in table pack_pieces
 	if (path[0] === "pack") {

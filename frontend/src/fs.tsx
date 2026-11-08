@@ -417,6 +417,15 @@ export async function extractTar(
 			const file = await handle.getFileHandle(path[0], { create: true });
 			const writable = await file.createWritable();
 			await body.pipeTo(writable);
+			// some browsers (seen on iPhone) can report a write as done while the
+			// file came out short: check it, so a broken file never reaches the game
+			const want = Number(header.size || 0);
+			const got = (await file.getFile()).size;
+			if (got !== want) {
+				archive.destroy(new BrokenFileError(header.name, got, want));
+				return;
+			}
+			if (handle === folder && path[0] === "CustomCeleste.dll") await rememberGameFileSize(got);
 
 			if (callback) callback("file", path[0]);
 		} else {
@@ -810,3 +819,39 @@ export const OpfsExplorer: Component<
 		</div>
 	);
 };
+
+// A file that came out a different size than it was downloaded.
+export class BrokenFileError extends Error {
+	constructor(name: string, got: number, want: number) {
+		super(`${name} came out ${got} of ${want} bytes`);
+		this.name = "BrokenFileError";
+	}
+}
+
+// The main game file's expected size, checked before every Play.
+const GAME_FILE_SIZE = ".CustomCelesteSize";
+
+export async function rememberGameFileSize(size: number) {
+	const f = await rootFolder.getFileHandle(GAME_FILE_SIZE, { create: true });
+	const w = await f.createWritable();
+	await w.write(String(size));
+	await w.close();
+}
+
+// true when CustomCeleste.dll looks whole: right size and a valid start ("MZ")
+export async function gameFileLooksWhole(): Promise<{ ok: boolean; why: string }> {
+	try {
+		const file = await (await rootFolder.getFileHandle("CustomCeleste.dll")).getFile();
+		const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+		if (head[0] !== 0x4d || head[1] !== 0x5a) return { ok: false, why: "CustomCeleste.dll has no valid start" };
+		try {
+			const f = await (await rootFolder.getFileHandle(GAME_FILE_SIZE)).getFile();
+			const want = Number(await f.text());
+			if (want && want !== file.size)
+				return { ok: false, why: `CustomCeleste.dll is ${file.size} bytes, expected ${want}` };
+		} catch {}
+		return { ok: true, why: "" };
+	} catch (e) {
+		return { ok: false, why: "CustomCeleste.dll missing: " + e };
+	}
+}

@@ -1,5 +1,6 @@
 // first: one tab at a time (see onetab.ts) — must finish before anything touches the game files
 import "./onetab";
+import "./report";
 import "dreamland";
 import "./styles.css";
 import { Main } from "./main";
@@ -98,6 +99,9 @@ async function waitForIsolation(): Promise<boolean> {
 	again.style.cssText = "font:inherit;padding:0.6em 1.4em;border-radius:0.6em;border:0;background:#8a5cf6;color:#fff;";
 	again.addEventListener("click", () => {
 		sessionStorage.removeItem("my-celeste-isolation-reload");
+		// ask the browser to keep the game files instead of clearing them when
+		// space is tight (iPhone browsers do clear them otherwise)
+		navigator.storage?.persist?.().then((kept) => console.log("[files] kept permanently:", kept)).catch(() => {});
 		location.reload();
 	});
 	const hint = document.createElement("p");
@@ -111,6 +115,9 @@ async function waitForIsolation(): Promise<boolean> {
 if (await waitForIsolation())
 	try {
 		sessionStorage.removeItem("my-celeste-isolation-reload");
+		// ask the browser to keep the game files instead of clearing them when
+		// space is tight (iPhone browsers do clear them otherwise)
+		navigator.storage?.persist?.().then((kept) => console.log("[files] kept permanently:", kept)).catch(() => {});
 		root.replaceWith(<App />);
 	} catch (err) {
 		console.log(err);

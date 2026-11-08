@@ -22,6 +22,9 @@ import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
 import iconComputer from "@ktibow/iconset-material-symbols/computer";
 import { linkFor, profile, PROFILES } from "./profile";
 import { mountTouchControls } from "./touch";
+import { report } from "./report";
+import { gameFileLooksWhole } from "./fs";
+import { removeLocalGame } from "./cloudgame";
 
 export const NAME = "webleste";
 
@@ -32,6 +35,71 @@ function alertImport(done: string[]) {
 			: "[saves] nothing imported: pick files like 0.celeste or settings.celeste"
 	);
 }
+
+
+// Before starting: make sure the main game file is whole on this device. If it
+// is not, forget this device's copy and reload, so the next load fetches it
+// fresh instead of the game failing with "error init()".
+async function startGame() {
+	const check = await gameFileLooksWhole();
+	if (!check.ok) {
+		report("play check", check.why);
+		await removeLocalGame();
+		alert("A game file was damaged on this device. The page will reload and fetch it again (your save is online).");
+		location.reload();
+		return;
+	}
+	play();
+}
+
+// Mod switch with the game open: save, stop, reopen the other mod and start it.
+async function switchModsTo(to: "sj" | "ds") {
+	if (profile?.id === to) return;
+	switching.textContent = `Switching to ${PROFILES[to].label}... saving first`;
+	switching.style.display = "flex";
+	try {
+		await syncNow();
+	} catch {}
+	const url = new URL(linkFor(to));
+	url.searchParams.set("autoplay", "1");
+	location.assign(url.toString());
+}
+const switching = document.createElement("div");
+switching.style.cssText =
+	"position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);color:#fff;font:600 1.3rem system-ui,sans-serif;";
+document.body.append(switching);
+
+// opened by a mod switch: press Play by itself once the game is ready
+if (new URLSearchParams(location.search).has("autoplay")) {
+	const u = new URL(location.href);
+	u.searchParams.delete("autoplay");
+	history.replaceState(null, "", u.toString());
+	let done = false;
+	useChange([gameState.ready], () => {
+		if (done || !gameState.ready || gameState.playing) return;
+		done = true;
+		startGame();
+	});
+}
+
+// A page that starts the game without a tap may get its sound held back by the
+// browser: the first tap or key lets every sound player of the page play.
+const audioContexts: AudioContext[] = [];
+for (const name of ["AudioContext", "webkitAudioContext"]) {
+	const Base = (window as any)[name];
+	if (!Base) continue;
+	(window as any)[name] = class extends Base {
+		constructor(...args: any[]) {
+			super(...args);
+			audioContexts.push(this as unknown as AudioContext);
+		}
+	};
+}
+const resumeAudio = () => {
+	for (const c of audioContexts) if (c.state === "suspended") c.resume().catch(() => {});
+};
+addEventListener("pointerdown", resumeAudio, { capture: true });
+addEventListener("keydown", resumeAudio, { capture: true });
 
 export const Logo: Component<{}, {}> = function () {
 	this.css = `
@@ -218,19 +286,9 @@ const TopBar: Component<
 
 	const close = () => (this.open = false);
 
-	const switchMods = async (to: "sj" | "ds") => {
-		if (profile?.id === to) return;
-		if (
-			gameState.playing &&
-			!confirm(
-				`Switch to ${PROFILES[to].label}? The game reloads; progress since your last save point is lost.`
-			)
-		)
-			return;
-		try {
-			await syncNow();
-		} catch {}
-		location.assign(linkFor(to));
+	const switchMods = (to: "sj" | "ds") => {
+		close();
+		switchModsTo(to);
 	};
 
 	const fullscreen = async () => {
@@ -302,7 +360,7 @@ const TopBar: Component<
 				</Button>
 				<div class={use(gameState.playing, (p) => (p ? "playbtn hidden" : "playbtn"))}>
 					<Button
-						on:click={() => play()}
+						on:click={() => startGame()}
 						icon="left"
 						type="primary"
 						disabled={use(this.allowPlay, (x) => !x)}
@@ -339,7 +397,7 @@ const TopBar: Component<
 						<Button
 							on:click={() => {
 								close();
-								play();
+								startGame();
 							}}
 							icon="left"
 							type="primary"

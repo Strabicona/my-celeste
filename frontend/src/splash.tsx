@@ -13,6 +13,7 @@ import {
 	FSAPI_UNAVAILABLE,
 	PICKERS_UNAVAILABLE,
 	rootFolder,
+	rememberGameFileSize,
 } from "./fs";
 import {
 	DownloadApp,
@@ -34,6 +35,7 @@ import {
 	uploadPack,
 } from "./cloudpacks";
 import { linkFor, profile, PROFILES } from "./profile";
+import { report } from "./report";
 import { downloadGame, gameKey, localGameVersion, removeLocalGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromDroppedFolder,
@@ -176,6 +178,9 @@ async function setupEverest(
 			throw e;
 		}
 		await setLocalPack("everest", LOCAL);
+		await rememberGameFileSize(
+			(await (await rootFolder.getFileHandle("CustomCeleste.dll")).getFile()).size
+		);
 		// let the engine finish writing the patched files before reading them
 		await new Promise((r) => setTimeout(r, 3000));
 	}
@@ -283,6 +288,7 @@ const CloudIntro: Component<
 		} catch (e) {
 			this.busy = false;
 			console.error(e);
+			if (!(e instanceof LockedError)) report(`load (${this.status})`, e);
 			if (e instanceof LockedError) {
 				this.locked = true;
 				this.status = "Enter the password again.";
@@ -299,6 +305,12 @@ const CloudIntro: Component<
 			// download the game again (the save is online, so nothing is lost)
 			if ((e as DOMException)?.name === "InvalidStateError" && !fresh) {
 				this.status = "Getting a fresh copy of the game...";
+				return run(1, true);
+			}
+			// a file came out broken while being saved on this device: fetch the
+			// game again once, from scratch
+			if ((e as Error)?.name === "BrokenFileError" && !fresh) {
+				this.status = "A game file came out broken on this device, fetching it again...";
 				return run(1, true);
 			}
 			this.status = "Something went wrong: " + e;
@@ -442,7 +454,7 @@ const UploadGame: Component<
 					type="primary"
 					icon="left"
 					disabled={false}
-					on:click={() => run()}
+					on:click={() => location.reload()}
 				>
 					<Icon icon={iconCloudUpload} />
 					Try again

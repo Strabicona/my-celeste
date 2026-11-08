@@ -416,7 +416,18 @@ export async function extractTar(
 		} else if (header.type === "file") {
 			const file = await handle.getFileHandle(path[0], { create: true });
 			const writable = await file.createWritable();
-			await body.pipeTo(writable);
+			// copy each chunk into its own buffer first: the iPhone browser writes
+			// the whole underlying download piece of a slice, padding the file
+			// (seen 8 Nov 2026: 2,800,000 bytes written for a 2,770,944 byte file)
+			await body
+				.pipeThrough(
+					new TransformStream<Uint8Array, Uint8Array>({
+						transform(chunk, controller) {
+							controller.enqueue(chunk.slice());
+						},
+					})
+				)
+				.pipeTo(writable);
 			// some browsers (seen on iPhone) can report a write as done while the
 			// file came out short: check it, so a broken file never reaches the game
 			const want = Number(header.size || 0);

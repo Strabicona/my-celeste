@@ -295,6 +295,9 @@ export function mountTouchControls(container: HTMLElement, canvas: HTMLCanvasEle
 	for (const el of [stick, zone]) {
 		el.addEventListener("pointerdown", (e) => startStick(e, el));
 		el.addEventListener("pointermove", onMove);
+		// Chrome's earliest movement signal: arrives before the frame-aligned
+		// pointermove, so a direction change reaches the game sooner
+		el.addEventListener("pointerrawupdate" as any, onMove as any);
 		el.addEventListener("pointerup", onEnd);
 		el.addEventListener("pointercancel", onEnd);
 	}

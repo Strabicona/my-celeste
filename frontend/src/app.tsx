@@ -68,21 +68,43 @@ if (new URLSearchParams(location.search).has("fresh")) {
 	history.replaceState(null, "", u.toString());
 }
 
+// Some first opens (seen on Chrome for iPhone, 8 Nov 2026) are not ready after
+// one reload; reopening worked. So try a few reloads by itself, waiting for
+// the helper each time, and only then offer a Try again button.
+const ISOLATION_TRIES = 3;
+
 async function waitForIsolation(): Promise<boolean> {
 	if (self.crossOriginIsolated) return true;
-	const tried = sessionStorage.getItem("my-celeste-isolation-reload");
-	root.textContent = tried
-		? "This browser window can't run the game: open the link in a normal Chrome window (not incognito, not Brave)."
-		: "Getting things ready, the page will reload by itself...";
-	if (!tried && navigator.serviceWorker) {
-		sessionStorage.setItem("my-celeste-isolation-reload", "1");
-		// reload once the helper is installed, or after 8 seconds at the latest
+	const tries = Number(sessionStorage.getItem("my-celeste-isolation-reload") || "0");
+	if (tries < ISOLATION_TRIES) {
+		root.textContent = "Getting things ready, the page will reload by itself...";
+		sessionStorage.setItem("my-celeste-isolation-reload", String(tries + 1));
+		const sw = navigator.serviceWorker;
 		await Promise.race([
-			navigator.serviceWorker.ready,
-			new Promise((r) => setTimeout(r, 8000)),
+			sw ? sw.ready.then(() => (sw.controller ? null : new Promise((r) => sw.addEventListener("controllerchange", r, { once: true })))) : null,
+			new Promise((r) => setTimeout(r, 2500 + tries * 2500)),
 		]);
 		location.reload();
+		return false;
 	}
+	root.textContent = "";
+	const box = document.createElement("div");
+	box.style.cssText =
+		"display:flex;flex-direction:column;gap:1em;align-items:center;justify-content:center;height:100vh;text-align:center;padding:1em;font:16px system-ui,sans-serif;";
+	const text = document.createElement("p");
+	text.textContent = "The game could not start in this tab yet.";
+	const again = document.createElement("button");
+	again.textContent = "Try again";
+	again.style.cssText = "font:inherit;padding:0.6em 1.4em;border-radius:0.6em;border:0;background:#8a5cf6;color:#fff;";
+	again.addEventListener("click", () => {
+		sessionStorage.removeItem("my-celeste-isolation-reload");
+		location.reload();
+	});
+	const hint = document.createElement("p");
+	hint.style.opacity = "0.7";
+	hint.textContent = "If it keeps failing: not in incognito, not inside another app's browser.";
+	box.append(text, again, hint);
+	root.append(box);
 	return false;
 }
 

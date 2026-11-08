@@ -56,7 +56,6 @@ export const Settings: Component<
 					store.logs = (e.target as HTMLInputElement).checked ? 1 : -1;
 				}}
 			/>
-			<TouchSettings />
 			<WispServer />
 			<div>
 				<div style="margin-inline: 0.2rem; user-select: none;">
@@ -166,7 +165,7 @@ const AccentPicker: Component<{}> = function () {
 };
 
 // Mobile mode's joystick: fixed (movable) or following the thumb
-const TouchSettings: Component<{}, { floating: boolean }> = function () {
+export const TouchSettings: Component<{}, { floating: boolean }> = function () {
 	this.css = `
 		display: flex;
 		flex-direction: column;
@@ -186,7 +185,6 @@ const TouchSettings: Component<{}, { floating: boolean }> = function () {
 	this.floating = store.joystickMode === "floating";
 	return (
 		<div>
-			<div style="user-select: none;">Mobile controls</div>
 			<Switch
 				title="Joystick follows my thumb (off: joystick stays where I put it)"
 				bind:on={use(this.floating)}
@@ -209,7 +207,7 @@ const TouchSettings: Component<{}, { floating: boolean }> = function () {
 					>
 						Move joystick
 					</Button>
-					<span class="hint">Close this, drag the joystick in the game, then tap "Done moving".</span>
+					<span class="hint">Then close the menu, drag the joystick in the game, and tap "Done moving".</span>
 				</div>
 			)}
 		</div>

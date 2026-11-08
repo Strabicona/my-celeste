@@ -7,7 +7,7 @@ import { OpfsExplorer } from "./fs";
 import { Achievements } from "./achievements";
 import { cloudState } from "./cloud";
 import { importSaveFiles, syncNow } from "./savesync";
-import { Settings } from "./settings";
+import { Settings, TouchSettings } from "./settings";
 
 import iconPlayArrow from "@ktibow/iconset-material-symbols/play-arrow";
 import iconFullscreen from "@ktibow/iconset-material-symbols/fullscreen";
@@ -16,8 +16,8 @@ import iconTrophy from "@ktibow/iconset-material-symbols/trophy";
 import iconCloudDone from "@ktibow/iconset-material-symbols/cloud-done";
 import iconUpload from "@ktibow/iconset-material-symbols/upload";
 import iconCloudOff from "@ktibow/iconset-material-symbols/cloud-off";
-import iconSettings from "@ktibow/iconset-material-symbols/settings";
-import iconSwap from "@ktibow/iconset-material-symbols/swap-horiz";
+import iconMenu from "@ktibow/iconset-material-symbols/menu";
+import iconClose from "@ktibow/iconset-material-symbols/close";
 import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
 import iconComputer from "@ktibow/iconset-material-symbols/computer";
 import { linkFor, profile, PROFILES } from "./profile";
@@ -75,6 +75,9 @@ export const Logo: Component<{}, {}> = function () {
 	);
 };
 
+// The menu (8 Nov 2026): a sidebar pulled from the left edge (tap the tab or
+// swipe from the edge), so the game gets the whole screen. Play and the save
+// status stay outside it, next to the tab.
 const TopBar: Component<
 	{
 		canvas: HTMLCanvasElement;
@@ -85,38 +88,103 @@ const TopBar: Component<
 		modInstallerOpen: boolean;
 		settingsOpen: boolean;
 	},
-	{ allowPlay: boolean; fps: HTMLElement; driveLabel: string; importInput: HTMLInputElement }
+	{
+		allowPlay: boolean;
+		driveLabel: string;
+		importInput: HTMLInputElement;
+		open: boolean;
+	}
 > = function () {
 	this.css = `
-		background: var(--bg);
-		padding: 1em;
-		border-bottom: 1.75px solid var(--surface2);
-		transition: background 150ms, color 150ms, border-color 150ms;
-		transition-timing-function: ease;
-		display: flex;
-		align-items: stretch;
-		width: 100%;
-		gap: 0.5rem;
+		position: fixed;
+		inset: 0;
+		z-index: 50;
+		pointer-events: none;
 
-		flex: 0 0;
+		.cluster {
+			position: absolute;
+			top: 0.5rem;
+			left: 0.5rem;
+			display: flex;
+			gap: 0.4rem;
+			pointer-events: auto;
+			opacity: 0.85;
+		}
+		.cluster .playbtn.hidden { display: none; }
 
-		.group {
+		.edge {
+			position: absolute;
+			left: 0;
+			top: 0;
+			bottom: 0;
+			width: 14px;
+			pointer-events: auto;
+			touch-action: none;
+		}
+
+		.backdrop {
+			position: absolute;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.45);
+			opacity: 0;
+			transition: opacity 0.2s;
+		}
+		.backdrop.open {
+			opacity: 1;
+			pointer-events: auto;
+		}
+
+		.drawer {
+			position: absolute;
+			top: 0;
+			left: 0;
+			bottom: 0;
+			width: min(21rem, 88vw);
+			background: var(--bg);
+			color: var(--fg);
+			border-right: 1.75px solid var(--surface2);
+			transform: translateX(-105%);
+			transition: transform 0.22s ease;
+			pointer-events: auto;
+			overflow-y: auto;
+			padding: 0.8rem 0.9rem 2rem;
+			display: flex;
+			flex-direction: column;
+			gap: 1.1rem;
+		}
+		.drawer.open { transform: none; }
+
+		.head {
 			display: flex;
 			align-items: center;
-			gap: 1rem;
+			justify-content: space-between;
 		}
 
-		.expand { flex: 1; }
-
-		@media (max-width: 750px) {
-			& {
-				flex-direction: column;
-			}
-			.group {
-				justify-content: space-evenly;
-			}
+		section {
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+		h3 {
+			margin: 0;
+			font-family: var(--font-display);
+			font-size: 0.95rem;
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+			color: var(--fg6);
+		}
+		.row {
+			display: flex;
+			gap: 0.5rem;
+		}
+		.row > * { flex: 1; }
+		.status {
+			font-size: 0.9rem;
+			opacity: 0.8;
 		}
 	`;
+
+	this.open = false;
 
 	useChange([gameState.ready, gameState.playing], () => {
 		this.allowPlay = gameState.ready && !gameState.playing;
@@ -128,7 +196,7 @@ const TopBar: Component<
 			this.driveLabel = cloudState.syncing
 				? "Saving online..."
 				: cloudState.error
-					? "Save error, click to retry"
+					? "Save error, tap to retry"
 					: cloudState.waiting > 0
 						? `${cloudState.waiting} save waiting`
 						: cloudState.lastSaved === "loaded"
@@ -139,179 +207,228 @@ const TopBar: Component<
 		}
 	);
 
+	const close = () => (this.open = false);
+
+	const switchMods = async (to: "sj" | "ds") => {
+		if (profile?.id === to) return;
+		if (
+			gameState.playing &&
+			!confirm(
+				`Switch to ${PROFILES[to].label}? The game reloads; progress since your last save point is lost.`
+			)
+		)
+			return;
+		try {
+			await syncNow();
+		} catch {}
+		location.assign(linkFor(to));
+	};
+
+	const fullscreen = async () => {
+		close();
+		try {
+			// Mobile mode: the whole game box, so the on-screen controls come along
+			const el = store.controls === "mobile" ? this.canvas.parentElement! : this.canvas;
+			await el.requestFullscreen({ navigationUI: "hide" });
+		} catch {}
+	};
+
+	// swipe right from the left edge opens the menu
+	let swipeX: number | null = null;
+
+	const pick = (on: boolean) => (on ? "primary" : "normal") as "primary" | "normal";
+	const controlsRow = (mobile: boolean) => (
+		<div class="row">
+			<Button on:click={() => (store.controls = "pc")} icon="left" type={pick(!mobile)} disabled={false} title="Keyboard / controller">
+				<Icon icon={iconComputer} />
+				<span>PC</span>
+			</Button>
+			<Button on:click={() => (store.controls = "mobile")} icon="left" type={pick(mobile)} disabled={false} title="On-screen joystick and buttons">
+				<Icon icon={iconPhone} />
+				<span>Mobile</span>
+			</Button>
+		</div>
+	);
+
 	return (
 		<div>
-			<div class="group">
-				<Logo />
-			</div>
-			<div class="expand" />
-			<div class="group">
-				<input
-					type="file"
-					multiple
-					accept=".celeste"
-					style="display: none"
-					bind:this={use(this.importInput)}
-					on:change={async () => {
-						const files = [...(this.importInput.files || [])];
-						this.importInput.value = "";
-						if (!files.length) return;
-						const done = await importSaveFiles(files);
-						alertImport(done);
-					}}
-				/>
+			<input
+				type="file"
+				multiple
+				accept=".celeste"
+				style="display: none"
+				bind:this={use(this.importInput)}
+				on:change={async () => {
+					const files = [...(this.importInput.files || [])];
+					this.importInput.value = "";
+					if (!files.length) return;
+					const done = await importSaveFiles(files);
+					alertImport(done);
+				}}
+			/>
+			<div
+				class="edge"
+				on:pointerdown={(e: PointerEvent) => {
+					swipeX = e.clientX;
+					(e.target as HTMLElement).setPointerCapture(e.pointerId);
+				}}
+				on:pointermove={(e: PointerEvent) => {
+					if (swipeX !== null && e.clientX - swipeX > 30) {
+						swipeX = null;
+						this.open = true;
+					}
+				}}
+				on:pointerup={() => (swipeX = null)}
+				on:pointercancel={() => (swipeX = null)}
+			/>
+			<div class="cluster">
 				<Button
-					on:click={async () => {
-						const other = profile?.id === "sj" ? "ds" : "sj";
-						if (
-							gameState.playing &&
-							!confirm(
-								`Switch to ${PROFILES[other].label}? The game reloads; progress since your last save point is lost.`
-							)
-						)
-							return;
-						try {
-							await syncNow();
-						} catch {}
-						location.assign(linkFor(other));
-					}}
-					icon="left"
+					on:click={() => (this.open = true)}
+					icon="full"
 					type="normal"
 					disabled={false}
-					title={"Switch mods: Strawberry Jam or D-Sides (each keeps its own save)"}
+					title="Menu"
 				>
-					<Icon icon={iconSwap} />
-					<span>{profile ? profile.label : "Pick mods"}</span>
+					<Icon icon={iconMenu} />
 				</Button>
-				<Button
-					on:click={() => {
-						store.controls = store.controls === "mobile" ? "pc" : "mobile";
-					}}
-					icon="left"
-					type="normal"
-					disabled={false}
-					title={"PC: keyboard/controller. Mobile: on-screen joystick and buttons."}
-				>
-					{$if(
-						use(store.controls, (c) => c === "mobile"),
-						<Icon icon={iconPhone} />,
-						<Icon icon={iconComputer} />
-					)}
-					<span>{use(store.controls, (c) => (c === "mobile" ? "Mobile" : "PC"))}</span>
-				</Button>
-				<Button
-					on:click={() => this.importInput.click()}
-					icon="left"
-					type="normal"
-					disabled={use(gameState.playing)}
-					title={"Import save files (0.celeste, settings.celeste) from this computer. Do it before pressing Play."}
-				>
-					<Icon icon={iconUpload} />
-					<span>Import save</span>
-				</Button>
+				<div class={use(gameState.playing, (p) => (p ? "playbtn hidden" : "playbtn"))}>
+					<Button
+						on:click={() => play()}
+						icon="left"
+						type="primary"
+						disabled={use(this.allowPlay, (x) => !x)}
+						title="Start Game"
+					>
+						<Icon icon={iconPlayArrow} />
+						<span>Play</span>
+					</Button>
+				</div>
 				<Button
 					on:click={async () => {
 						await syncNow();
 					}}
-					icon="left"
-					type="normal"
-					disabled={false}
-					title={"Online save status. Click to save now."}
-				>
-					{$if(
-						use(cloudState.error),
-						<Icon icon={iconCloudOff} />,
-						<Icon icon={iconCloudDone} />
-					)}
-					<span>
-						{use(this.driveLabel)}
-					</span>
-				</Button>
-				{/*
-				<Button
-					on:click={() => (this.steamOpen = true)}
-					icon="left"
-					type="normal"
-					disabled={false}
-					title={"Log in to Steam"}
-				>
-					<svg
-						width="1em"
-						height="1em"
-						viewBox="0 0 256 259"
-						version="1.1"
-						xmlns="http://www.w3.org/2000/svg"
-						xmlns:xlink="http://www.w3.org/1999/xlink"
-						preserveAspectRatio="xMidYMid"
-					>
-						<g>
-							<path
-								d="M127.778579,0 C60.4203546,0 5.24030561,52.412282 0,119.013983 L68.7236558,147.68805 C74.5451924,143.665561 81.5845466,141.322185 89.1497766,141.322185 C89.8324924,141.322185 90.5059824,141.340637 91.1702465,141.377541 L121.735621,96.668877 L121.735621,96.0415165 C121.735621,69.1388208 143.425688,47.2457835 170.088511,47.2457835 C196.751333,47.2457835 218.441401,69.1388208 218.441401,96.0415165 C218.441401,122.944212 196.751333,144.846475 170.088511,144.846475 C169.719475,144.846475 169.359666,144.83725 168.99063,144.828024 L125.398299,176.205276 C125.425977,176.786507 125.444428,177.367738 125.444428,177.939743 C125.444428,198.144443 109.160732,214.575753 89.1497766,214.575753 C71.5836817,214.575753 56.8868387,201.917832 53.5655182,185.163615 L4.40997549,164.654462 C19.6326942,218.967277 69.0834655,258.786219 127.778579,258.786219 C198.596511,258.786219 256,200.847629 256,129.393109 C256,57.9293643 198.596511,0 127.778579,0 Z M80.3519677,196.332478 L64.6033732,189.763644 C67.389592,195.63131 72.2239585,200.539484 78.6359521,203.233444 C92.4932392,209.064206 108.472481,202.430791 114.247888,188.435116 C117.043333,181.663313 117.061785,174.190342 114.294018,167.400086 C111.526251,160.609831 106.295171,155.31417 99.5879487,152.491048 C92.9176301,149.695603 85.7767911,149.797088 79.5031858,152.186594 L95.777656,158.976849 C105.999942,163.276114 110.834309,175.122157 106.571948,185.436702 C102.318812,195.751247 90.574254,200.631743 80.3519677,196.332478 Z M202.30901,96.0424391 C202.30901,78.1165345 187.85204,63.5211763 170.092201,63.5211763 C152.323137,63.5211763 137.866167,78.1165345 137.866167,96.0424391 C137.866167,113.968344 152.323137,128.554476 170.092201,128.554476 C187.85204,128.554476 202.30901,113.968344 202.30901,96.0424391 Z M145.938821,95.9870838 C145.938821,82.4988323 156.779242,71.5661525 170.138331,71.5661525 C183.506646,71.5661525 194.347066,82.4988323 194.347066,95.9870838 C194.347066,109.475335 183.506646,120.408015 170.138331,120.408015 C156.779242,120.408015 145.938821,109.475335 145.938821,95.9870838 Z"
-								fill="var(--fg)"
-							></path>
-						</g>
-					</svg>
-					<span>Sync</span>
-				</Button>
-				*/}
-				<Button
-					on:click={() => (this.achievementsOpen = true)}
 					icon="full"
 					type="normal"
 					disabled={false}
-					title={"Achievements"}
+					title={use(this.driveLabel)}
 				>
-					<Icon icon={iconTrophy} />
-				</Button>
-				<Button
-					on:click={() => (this.fsOpen = true)}
-					icon="full"
-					type="normal"
-					disabled={false}
-					title={"File Browser"}
-				>
-					<Icon icon={iconFolderOpen} />
-				</Button>
-				<Button
-					icon="full"
-					type="normal"
-					disabled={false}
-					title="Settings"
-					on:click={() => {
-						this.settingsOpen = true;
-					}}
-				>
-					<Icon icon={iconSettings} />
-				</Button>
-				<Button
-					on:click={async () => {
-						try {
-							// Mobile mode: the whole game box, so the on-screen controls come along
-							const el =
-								store.controls === "mobile" ? this.canvas.parentElement! : this.canvas;
-							await el.requestFullscreen({ navigationUI: "hide" });
-						} catch {}
-					}}
-					icon="full"
-					type="normal"
-					disabled={use(gameState.playing, (x) => !x)}
-					title={"Fullscreen"}
-				>
-					<Icon icon={iconFullscreen} />
-				</Button>
-				<Button
-					on:click={() => {
-						play();
-					}}
-					icon="left"
-					type="primary"
-					disabled={use(this.allowPlay, (x) => !x)}
-					title={"Start Game"}
-				>
-					<Icon icon={iconPlayArrow} />
-					<span>Play</span>
+					{$if(use(cloudState.error), <Icon icon={iconCloudOff} />, <Icon icon={iconCloudDone} />)}
 				</Button>
 			</div>
+			<div class={use(this.open, (o) => (o ? "backdrop open" : "backdrop"))} on:click={close} />
+			<nav class={use(this.open, (o) => (o ? "drawer open" : "drawer"))}>
+				<div class="head">
+					<Logo />
+					<Button on:click={close} icon="full" type="normal" disabled={false} title="Close">
+						<Icon icon={iconClose} />
+					</Button>
+				</div>
+
+				<section>
+					<h3>Play</h3>
+					<div class="row">
+						<Button
+							on:click={() => {
+								close();
+								play();
+							}}
+							icon="left"
+							type="primary"
+							disabled={use(this.allowPlay, (x) => !x)}
+							title="Start Game"
+						>
+							<Icon icon={iconPlayArrow} />
+							<span>Play</span>
+						</Button>
+						<Button
+							on:click={fullscreen}
+							icon="left"
+							type="normal"
+							disabled={use(gameState.playing, (x) => !x)}
+							title="Fullscreen"
+						>
+							<Icon icon={iconFullscreen} />
+							<span>Fullscreen</span>
+						</Button>
+					</div>
+				</section>
+
+				<section>
+					<h3>Mods</h3>
+					<div class="row">
+						<Button on:click={() => switchMods("sj")} icon="none" type={pick(profile?.id === "sj")} disabled={false} title="Strawberry Jam (own save)">
+							{PROFILES.sj.label}
+						</Button>
+						<Button on:click={() => switchMods("ds")} icon="none" type={pick(profile?.id === "ds")} disabled={false} title="D-Sides (own save)">
+							{PROFILES.ds.label}
+						</Button>
+					</div>
+				</section>
+
+				<section>
+					<h3>Controls</h3>
+					{$if(use(store.controls, (c) => c === "mobile"), controlsRow(true), controlsRow(false))}
+					<TouchSettings />
+				</section>
+
+				<section>
+					<h3>Save</h3>
+					<div class="status">{use(this.driveLabel)}</div>
+					<div class="row">
+						<Button on:click={async () => await syncNow()} icon="left" type="normal" disabled={false} title="Save online now">
+							<Icon icon={iconCloudDone} />
+							<span>Save now</span>
+						</Button>
+						<Button
+							on:click={() => this.importInput.click()}
+							icon="left"
+							type="normal"
+							disabled={use(gameState.playing)}
+							title="Import save files (0.celeste, settings.celeste) from this device. Do it before pressing Play."
+						>
+							<Icon icon={iconUpload} />
+							<span>Import save</span>
+						</Button>
+					</div>
+				</section>
+
+				<section>
+					<h3>Settings</h3>
+					<Settings />
+				</section>
+
+				<section>
+					<h3>Extras</h3>
+					<div class="row">
+						<Button
+							on:click={() => {
+								close();
+								this.achievementsOpen = true;
+							}}
+							icon="left"
+							type="normal"
+							disabled={false}
+							title="Achievements"
+						>
+							<Icon icon={iconTrophy} />
+							<span>Achievements</span>
+						</Button>
+						<Button
+							on:click={() => {
+								close();
+								this.fsOpen = true;
+							}}
+							icon="left"
+							type="normal"
+							disabled={false}
+							title="File Browser"
+						>
+							<Icon icon={iconFolderOpen} />
+							<span>Files</span>
+						</Button>
+					</div>
+				</section>
+			</nav>
 		</div>
 	);
 };
@@ -400,9 +517,6 @@ export const Main: Component<
 				</Dialog>
 				<Dialog name="Achievements" bind:open={use(this.achievementsOpen)}>
 					<Achievements open={use(this.achievementsOpen)} />
-				</Dialog>
-				<Dialog name="Settings" bind:open={use(this.settingsOpen)}>
-					<Settings />
 				</Dialog>
 			</div>
 		) as HTMLDivElement;

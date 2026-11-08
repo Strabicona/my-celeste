@@ -111,6 +111,15 @@ const TopBar: Component<
 			opacity: 0.85;
 		}
 		.cluster .playbtn.hidden { display: none; }
+		.cluster button {
+			min-width: 2.75rem;
+			height: 2.75rem;
+			padding-inline: 0.7rem;
+		}
+		.cluster button svg {
+			width: 1.6rem;
+			height: 1.6rem;
+		}
 
 		.edge {
 			position: absolute;

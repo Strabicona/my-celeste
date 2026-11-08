@@ -22,7 +22,7 @@ import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
 import iconComputer from "@ktibow/iconset-material-symbols/computer";
 import { linkFor, profile, PROFILES } from "./profile";
 import { mountTouchControls } from "./touch";
-import { report } from "./report";
+import { report, BUILD } from "./report";
 import { gameFileLooksWhole } from "./fs";
 import { removeLocalGame } from "./cloudgame";
 
@@ -41,6 +41,18 @@ function alertImport(done: string[]) {
 // is not, forget this device's copy and reload, so the next load fetches it
 // fresh instead of the game failing with "error init()".
 async function startGame() {
+	// fingerprint of the main game file, compared with a known good copy when
+	// something fails on a device (good: 5,239,808 bytes, sha256 e6e41f6e...)
+	try {
+		const root = await navigator.storage.getDirectory();
+		const f = await (await root.getFileHandle("CustomCeleste.dll")).getFile();
+		const sum = [...new Uint8Array(await crypto.subtle.digest("SHA-256", await f.arrayBuffer()))]
+			.map((b) => b.toString(16).padStart(2, "0"))
+			.join("");
+		report("play-start", `CustomCeleste.dll ${f.size} bytes sha256 ${sum}`);
+	} catch (e) {
+		report("play-start", "could not fingerprint CustomCeleste.dll: " + e);
+	}
 	const check = await gameFileLooksWhole();
 	if (!check.ok) {
 		report("play check", check.why);
@@ -137,7 +149,7 @@ export const Logo: Component<{}, {}> = function () {
 			<img alt="Celeste icon" src="./app.webp" />
 			<span>{NAME}</span>
 			<div class="extras">
-				<span class="ver">v1.4.0.0</span>
+				<span class="ver">v1.4.0.0 · {BUILD}</span>
 			</div>
 		</a>
 	);

@@ -3,7 +3,10 @@
 // Sent in small batches; never more than 40 entries per page load.
 import { profile } from "./profile";
 
-type Entry = { time: string; step: string; message: string; device: string; link: string };
+type Entry = { time: string; step: string; message: string; device: string; link: string; build: string };
+
+// which version of the site this page is (shown on the loading screen too)
+export const BUILD = (import.meta.env.VITE_BUILD_ID || "dev").slice(0, 7);
 
 const queue: Entry[] = [];
 let sent = 0;
@@ -52,6 +55,7 @@ export function report(step: string, e: unknown) {
 		message: text(e).slice(0, 3000),
 		device: device(),
 		link: profile?.id ?? "none",
+		build: BUILD,
 	});
 	if (!timer) timer = setTimeout(flush, 1500);
 }
@@ -64,6 +68,18 @@ console.error = (...args: unknown[]) => {
 		report("console", args.map(text).join(" "));
 	} catch {}
 };
+// the game prints some of its errors as ordinary lines ("error init()!")
+const ERRORISH = /error|exception|fail/i;
+for (const level of ["log", "warn", "info"] as const) {
+	const orig = console[level].bind(console);
+	console[level] = (...args: unknown[]) => {
+		orig(...args);
+		try {
+			const line = args.map(text).join(" ");
+			if (ERRORISH.test(line) && !line.startsWith("[saves]")) report("console." + level, line);
+		} catch {}
+	};
+}
 addEventListener("error", (e) => report("page", (e as ErrorEvent).error || (e as ErrorEvent).message));
 addEventListener("unhandledrejection", (e) => report("promise", (e as PromiseRejectionEvent).reason));
 addEventListener("pagehide", () => flush());

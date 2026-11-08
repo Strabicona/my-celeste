@@ -1,5 +1,5 @@
 import { readFileRetry } from "./readretry";
-import { removeLocalEverest } from "./cloudpacks";
+import { removeLocalEverest, removeLocalMods } from "./cloudpacks";
 // Moves the game files between the browser's storage and the site's cloud
 // storage as one archive (Content folder + the clean Celeste.exe + the
 // already-patched CustomCeleste.dll), cut into 1.4 MB pieces. Because the
@@ -52,8 +52,10 @@ export async function removeLocalGame() {
 			await rootFolder.removeEntry(name, { recursive: true });
 		} catch {}
 	}
-	// Everest is patched into the game file, so it goes with it
+	// Everest is patched into the game file, so it goes with it; the mods too,
+	// so a device that fetches the game again never keeps old damaged mods
 	await removeLocalEverest();
+	await removeLocalMods();
 }
 const PARALLEL = 4;
 

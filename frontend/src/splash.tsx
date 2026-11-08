@@ -248,8 +248,17 @@ const CloudIntro: Component<
 
 				// this link's mods
 				const mods = await packInfo(profile!.pack);
-				const wantMods = mods ? profile!.pack + ":" + packKey(mods) : null;
-				if ((await localPack("mods")) !== wantMods) {
+				// "|w2": unpacked with the fixed writer (8 Nov 2026). iPhones/iPads that
+				// unpacked mods before that fix have padded, damaged zips: they fetch the
+				// mods again once. Other devices' older copies were always fine.
+				const baseMods = mods ? profile!.pack + ":" + packKey(mods) : null;
+				const wantMods = baseMods ? baseMods + "|w2" : null;
+				const haveMods = await localPack("mods");
+				const iOS =
+					/iPhone|iPad|iPod/.test(navigator.userAgent) ||
+					(/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+				const modsOk = haveMods === wantMods || (!iOS && !!baseMods && haveMods === baseMods);
+				if (!modsOk) {
 					await removeLocalMods();
 					if (mods) {
 						this.status = `Downloading ${profile!.label}...`;

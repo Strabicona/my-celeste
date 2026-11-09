@@ -502,6 +502,38 @@ function monitorFps(): () => void {
 	};
 }
 
+// what the game is doing (see WatchScene in loader/Celeste.cs)
+export const sceneInfo = {
+	state: 0, // 0 not in a level, 1 level running, 2 level paused
+	gen0: 0,
+	gen1: 0,
+	gen2: 0,
+	gcPauseMs: 0,
+	managedMB: 0,
+};
+
+function monitorScene(): () => void {
+	let stop = false;
+	exports.CelesteLoader.WatchScene((info: string) => {
+		const [state, gen0, gen1, gen2, pause, mb] = info.split("|").map(Number);
+		Object.assign(sceneInfo, { state, gen0, gen1, gen2, gcPauseMs: pause, managedMB: mb });
+		return stop;
+	});
+	return () => {
+		stop = true;
+		sceneInfo.state = 0;
+	};
+}
+
+// size of the game's whole memory (MB)
+export function wasmMemoryMB(): number {
+	try {
+		return Math.round((runtime as any).Module.HEAPU8.buffer.byteLength / 1048576);
+	} catch {
+		return -1;
+	}
+}
+
 function monitorMem(): () => void {
 	let stop = false;
 	exports.CelesteLoader.WatchMemoryUsage((mem: number) => {
@@ -518,6 +550,7 @@ export async function play() {
 
 	let stopMonitoring = monitorMem();
 	let stopFps = monitorFps();
+	let stopScene = monitorScene();
 
 	console.debug("Init...");
 	const before = performance.now();
@@ -539,6 +572,7 @@ export async function play() {
 
 	stopMonitoring();
 	stopFps();
+	stopScene();
 
 	console.debug("Cleanup...");
 	await exports.CelesteLoader.Cleanup();

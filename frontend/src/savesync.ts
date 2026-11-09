@@ -13,7 +13,9 @@ import { profile, PROFILES } from "./profile";
 import { readFileRetry } from "./readretry";
 
 const SAVES_PATH = ["Celeste", "Saves"];
-const POLL_MS = 2000;
+// every 5 s (was 2 s): Strawberry Jam writes ~80 save files, and each look
+// reads all of them (9 Nov 2026, choppiness after a while)
+const POLL_MS = 5000;
 
 // Every save file the game writes: numbered slots, settings, debug, and
 // Everest's mod files (0-modsave-…, modsettings-…), which hold mod progress.
@@ -194,11 +196,16 @@ export async function pullSaves(): Promise<void> {
 
 let running = false;
 
+const stats = { lastMs: 0, files: 0 };
+export const syncStats = () => ({ ...stats });
+
 async function syncOnce(urgent = false, keepalive = false) {
 	if (running) return;
 	running = true;
+	const t0 = performance.now();
 	try {
 		const local = await readLocal();
+		stats.files = local.size;
 		const pending: [string, Local][] = [];
 		for (const [name, file] of local) {
 			const now = { size: file.size, lastModified: file.lastModified };
@@ -235,6 +242,7 @@ async function syncOnce(urgent = false, keepalive = false) {
 				: String(e);
 	} finally {
 		cloudState.syncing = false;
+		stats.lastMs = Math.round(performance.now() - t0);
 		running = false;
 	}
 }

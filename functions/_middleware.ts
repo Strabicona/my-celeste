@@ -333,12 +333,20 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 			.slice(0, 20)
 			.map((e) => JSON.stringify(e).slice(0, 4000))
 			.map((t) => JSON.parse(t.endsWith("}") ? t : JSON.stringify({ cut: t })));
-		const row = await db.prepare("SELECT value FROM meta WHERE key = 'errors'").first<{ value: string }>();
-		const all = [...(row ? JSON.parse(row.value) : []), ...incoming].slice(-60);
-		await db
-			.prepare("INSERT INTO meta (key, value) VALUES ('errors', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-			.bind(JSON.stringify(all))
-			.run();
+		// health samples (once a minute while playing) go in their own list, so
+		// they never push errors out
+		for (const [key, keep, entries] of [
+			["errors", 60, incoming.filter((e: any) => e?.step !== "health")],
+			["health", 240, incoming.filter((e: any) => e?.step === "health")],
+		] as [string, number, unknown[]][]) {
+			if (!entries.length) continue;
+			const row = await db.prepare("SELECT value FROM meta WHERE key = ?").bind(key).first<{ value: string }>();
+			const all = [...(row ? JSON.parse(row.value) : []), ...entries].slice(-keep);
+			await db
+				.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+				.bind(key, JSON.stringify(all))
+				.run();
+		}
 		return json({ ok: true });
 	}
 

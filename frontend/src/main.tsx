@@ -22,6 +22,7 @@ import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
 import iconComputer from "@ktibow/iconset-material-symbols/computer";
 import { linkFor, profile, PROFILES } from "./profile";
 import { mountTouchControls } from "./touch";
+import { startAwayWatch } from "./away";
 import { report, BUILD } from "./report";
 import { gameFileLooksWhole } from "./fs";
 import { removeLocalGame } from "./cloudgame";
@@ -593,6 +594,7 @@ export const Main: Component<
 
 	this.mount = () => {
 		mountTouchControls(game as HTMLElement, this.canvas);
+		startAwayWatch(this.canvas);
 		useChange([store.logs], (x) => {
 			this.logcontainer.style.height = `${x}px`;
 			this.logsize = x;

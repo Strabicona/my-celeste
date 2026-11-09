@@ -1,6 +1,7 @@
 // Sends this page's errors to the site's cloud storage (added 8 Nov 2026), so a
 // problem on a phone can be read there without copying anything off the screen.
-// Sent in small batches; never more than 40 entries per page load.
+// Sent in small batches; never more than 40 error entries per page load
+// (health samples are separate and do not count).
 import { profile } from "./profile";
 
 type Entry = { time: string; step: string; message: string; device: string; link: string; build: string };
@@ -47,8 +48,10 @@ async function flush() {
 }
 
 export function report(step: string, e: unknown) {
-	if (sent >= MAX) return;
-	sent++;
+	if (step !== "health") {
+		if (sent >= MAX) return;
+		sent++;
+	}
 	queue.push({
 		time: new Date().toISOString(),
 		step,

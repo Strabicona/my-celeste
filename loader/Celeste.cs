@@ -245,6 +245,40 @@ public static partial class CelesteLoader
         });
     }
 
+    // Once a second: what the game is doing, for auto-pause and the health report
+    // (added 8-9 Nov 2026). Only reads; never changes the game.
+    // "state|gen0|gen1|gen2|gcPauseMs|managedMB"; state: 0 not in a level,
+    // 1 in a level and running, 2 in a level and paused
+    [JSExport]
+    internal static Task WatchScene([JSMarshalAs<JSType.Function<JSType.String, JSType.Boolean>>] Func<string, bool> callback)
+    {
+        return Task.Run(async () =>
+        {
+            PropertyInfo sceneProp = null;
+            while (true)
+            {
+                int state = 0;
+                try
+                {
+                    if (sceneProp == null && celeste != null)
+                        sceneProp = celeste.GetType("Monocle.Engine")?.GetProperty("Scene", BindingFlags.Static | BindingFlags.Public);
+                    var scene = sceneProp?.GetValue(null);
+                    if (scene != null && scene.GetType().FullName == "Celeste.Level")
+                    {
+                        var paused = scene.GetType().GetField("Paused", BindingFlags.Instance | BindingFlags.Public);
+                        state = paused != null && (bool)paused.GetValue(scene) ? 2 : 1;
+                    }
+                }
+                catch { }
+                string info = state + "|" + GC.CollectionCount(0) + "|" + GC.CollectionCount(1) + "|" + GC.CollectionCount(2)
+                    + "|" + (long)GC.GetTotalPauseDuration().TotalMilliseconds
+                    + "|" + (GC.GetTotalMemory(false) / (1024 * 1024));
+                if (callback(info)) break;
+                await Task.Delay(1000);
+            }
+        });
+    }
+
     [JSExport]
     internal static Task WatchMemoryUsage([JSMarshalAs<JSType.Function<JSType.Number, JSType.Boolean>>] Func<double, bool> callback)
     {

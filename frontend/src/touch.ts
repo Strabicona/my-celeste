@@ -339,3 +339,10 @@ export function mountTouchControls(container: HTMLElement, canvas: HTMLCanvasEle
 	document.addEventListener("visibilitychange", () => document.hidden && releaseAll());
 	container.append(ui);
 }
+
+// a short press of the game's Pause key (used by auto-pause)
+export function pressPause(canvas: HTMLCanvasElement) {
+	if (!target) target = canvas;
+	send("Pause", true);
+	setTimeout(() => send("Pause", false), 120);
+}

@@ -1,6 +1,6 @@
 // first: one tab at a time (see onetab.ts) — must finish before anything touches the game files
 import "./onetab";
-import "./report";
+import { report } from "./report";
 import "dreamland";
 import "./styles.css";
 import { Main } from "./main";
@@ -69,23 +69,37 @@ if (new URLSearchParams(location.search).has("fresh")) {
 	history.replaceState(null, "", u.toString());
 }
 
-// Some first opens (seen on Chrome for iPhone, 8 Nov 2026) are not ready after
-// one reload; reopening worked. So try a few reloads by itself, waiting for
-// the helper each time, and only then offer a Try again button.
-const ISOLATION_TRIES = 3;
+// Some opens (Chrome for iPhone, on the GitHub address) are not ready: that
+// address needs a helper in the background (coi-serviceworker), and the iPhone
+// sometimes loads the page without it, e.g. when it brings a tab back by
+// itself. So: retry with a fresh load a few times; on the GitHub address,
+// move to the Cloudflare address, which needs no helper at all.
+const ISOLATION_TRIES = 4;
+const TRIES_KEY = "my-celeste-isolation-reload";
+const CLOUDFLARE = "https://my-celeste.pages.dev";
 
 async function waitForIsolation(): Promise<boolean> {
 	if (self.crossOriginIsolated) return true;
-	const tries = Number(sessionStorage.getItem("my-celeste-isolation-reload") || "0");
+	const tries = Number(sessionStorage.getItem(TRIES_KEY) || "0");
+	report("not ready", `try ${tries + 1}, helper ${navigator.serviceWorker?.controller ? "on" : "off"}`);
+	if (location.hostname.endsWith("github.io") && tries >= 1) {
+		root.textContent = "Moving to the faster address...";
+		sessionStorage.removeItem(TRIES_KEY);
+		location.replace(CLOUDFLARE + "/" + location.search + location.hash);
+		return false;
+	}
 	if (tries < ISOLATION_TRIES) {
 		root.textContent = "Getting things ready, the page will reload by itself...";
-		sessionStorage.setItem("my-celeste-isolation-reload", String(tries + 1));
+		sessionStorage.setItem(TRIES_KEY, String(tries + 1));
 		const sw = navigator.serviceWorker;
 		await Promise.race([
 			sw ? sw.ready.then(() => (sw.controller ? null : new Promise((r) => sw.addEventListener("controllerchange", r, { once: true })))) : null,
 			new Promise((r) => setTimeout(r, 2500 + tries * 2500)),
 		]);
-		location.reload();
+		// a fresh load (not one the browser can answer from memory)
+		const u = new URL(location.href);
+		u.searchParams.set("coi", Date.now().toString(36));
+		location.replace(u.toString());
 		return false;
 	}
 	root.textContent = "";
@@ -98,10 +112,7 @@ async function waitForIsolation(): Promise<boolean> {
 	again.textContent = "Try again";
 	again.style.cssText = "font:inherit;padding:0.6em 1.4em;border-radius:0.6em;border:0;background:#8a5cf6;color:#fff;";
 	again.addEventListener("click", () => {
-		sessionStorage.removeItem("my-celeste-isolation-reload");
-		// ask the browser to keep the game files instead of clearing them when
-		// space is tight (iPhone browsers do clear them otherwise)
-		navigator.storage?.persist?.().then((kept) => console.log("[files] kept permanently:", kept)).catch(() => {});
+		sessionStorage.removeItem(TRIES_KEY);
 		location.reload();
 	});
 	const hint = document.createElement("p");
@@ -114,7 +125,14 @@ async function waitForIsolation(): Promise<boolean> {
 
 if (await waitForIsolation())
 	try {
-		sessionStorage.removeItem("my-celeste-isolation-reload");
+		sessionStorage.removeItem(TRIES_KEY);
+		{
+			const u = new URL(location.href);
+			if (u.searchParams.has("coi")) {
+				u.searchParams.delete("coi");
+				history.replaceState(null, "", u.toString());
+			}
+		}
 		// ask the browser to keep the game files instead of clearing them when
 		// space is tight (iPhone browsers do clear them otherwise)
 		navigator.storage?.persist?.().then((kept) => console.log("[files] kept permanently:", kept)).catch(() => {});

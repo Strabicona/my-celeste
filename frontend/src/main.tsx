@@ -81,6 +81,22 @@ switching.style.cssText =
 	"position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);color:#fff;font:600 1.3rem system-ui,sans-serif;";
 document.body.append(switching);
 
+// The phone closed the tab while the game was running (no clean exit), e.g. to
+// get memory back: report it on the next load, so it shows in the error log.
+{
+	const KEY = "my-celeste-playing";
+	const was = sessionStorage.getItem(KEY);
+	if (was) {
+		const secs = Math.round((Date.now() - Number(was)) / 1000);
+		report("tab reloaded while playing", `the game had been running about ${secs}s when the tab was closed or crashed`);
+		sessionStorage.removeItem(KEY);
+	}
+	useChange([gameState.playing], () => {
+		if (gameState.playing) sessionStorage.setItem(KEY, String(Date.now()));
+	});
+	addEventListener("pagehide", () => sessionStorage.removeItem(KEY));
+}
+
 // opened by a mod switch: press Play by itself once the game is ready
 if (new URLSearchParams(location.search).has("autoplay")) {
 	const u = new URL(location.href);

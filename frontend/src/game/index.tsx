@@ -157,6 +157,12 @@ export const GameView: Component<
 		#fps.hidden {
 			display: none;
 		}
+		#fps .stall {
+			color: #ff5c5c;
+		}
+		#fps .stall.hidden {
+			display: none;
+		}
 	`;
 	const notRunning = use(gameState.playing, (x) =>
 		x ? "gameoverlay notrunning started" : "gameoverlay notrunning stopped"
@@ -180,6 +186,9 @@ export const GameView: Component<
 			<div class={notRunning}>Game not running.</div>
 			<div id="fps" class={use(gameState.fps, (x) => (x >= 0 ? "" : "hidden"))}>
 				{use(gameState.fps, (x) => `${x} FPS`)}
+				<span class={use(gameState.worstMs, (x) => (x > 0 ? "stall" : "stall hidden"))}>
+					{use(gameState.worstMs, (x) => ` · stall ${x} ms`)}
+				</span>
 			</div>
 			<canvas
 				id="canvas"

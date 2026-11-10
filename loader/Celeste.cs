@@ -245,6 +245,79 @@ public static partial class CelesteLoader
         });
     }
 
+    // The real frame counter (10 Nov 2026). The game's own FPS number is an
+    // average over a whole second, so a freeze of a fifth of a second barely
+    // moves it. This watches the engine's draw counter (Engine.fpsCounter, which
+    // changes on every drawn frame, also during the short freeze on a dash)
+    // every 2 ms and times the gap between frames, so a stall shows as one long
+    // frame. Four times a second it reports "frames in the last second|longest
+    // frame in the last second (ms)". A memory clean-up stops this watcher too;
+    // the gap it leaves is still counted.
+    [JSExport]
+    internal static Task WatchFrames([JSMarshalAs<JSType.Function<JSType.String, JSType.Boolean>>] Func<string, bool> callback)
+    {
+        return Task.Run(async () =>
+        {
+            Func<object> instance = null;
+            FieldInfo counter = null;
+            bool told = false;
+            int lastValue = int.MinValue;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var frames = new System.Collections.Generic.Queue<(double at, double gap)>();
+            double lastFrameAt = 0, nextReport = 250;
+            while (true)
+            {
+                double now = clock.Elapsed.TotalMilliseconds;
+                try
+                {
+                    if (counter == null && celeste != null)
+                    {
+                        var engine = celeste.GetType("Monocle.Engine");
+                        var all = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+                        var ip = engine?.GetProperty("Instance", all);
+                        var iff = ip == null ? engine?.GetField("Instance", all) : null;
+                        if (ip != null) instance = () => ip.GetValue(null);
+                        else if (iff != null) instance = () => iff.GetValue(null);
+                        counter = engine?.GetField("fpsCounter", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        if (!told && engine != null)
+                        {
+                            told = true;
+                            bool ok = counter != null && instance != null;
+                            Console.WriteLine("[frames] draw counter " + (ok ? "found" : "missing, using the game's FPS number"));
+                            if (!ok)
+                            {
+                                callback("missing");
+                                break;
+                            }
+                        }
+                    }
+                    var inst = instance?.Invoke();
+                    if (inst != null && counter != null)
+                    {
+                        int value = (int)counter.GetValue(inst);
+                        if (lastValue == int.MinValue) lastFrameAt = now;
+                        else if (value != lastValue)
+                        {
+                            frames.Enqueue((now, now - lastFrameAt));
+                            lastFrameAt = now;
+                        }
+                        lastValue = value;
+                    }
+                }
+                catch { }
+                while (frames.Count > 0 && frames.Peek().at < now - 1000) frames.Dequeue();
+                if (now >= nextReport)
+                {
+                    nextReport = now + 250;
+                    double worst = lastValue == int.MinValue ? 0 : now - lastFrameAt; // a frame still not done counts too
+                    foreach (var f in frames) if (f.gap > worst) worst = f.gap;
+                    if (callback(frames.Count + "|" + (int)worst)) break;
+                }
+                await Task.Delay(2);
+            }
+        });
+    }
+
     // Once a second: what the game is doing, for auto-pause and the health report
     // (added 8-9 Nov 2026). Only reads; never changes the game.
     // "state|gen0|gen1|gen2|gcPauseMs|managedMB"; state: 0 not in a level,

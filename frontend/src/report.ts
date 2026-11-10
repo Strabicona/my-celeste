@@ -79,7 +79,7 @@ for (const level of ["log", "warn", "info"] as const) {
 		orig(...args);
 		try {
 			const line = args.map(text).join(" ");
-			if ((ERRORISH.test(line) && !line.startsWith("[saves]")) || line.startsWith("[away]"))
+			if ((ERRORISH.test(line) && !line.startsWith("[saves]")) || line.startsWith("[away]") || line.startsWith("[frames]"))
 				report("console." + level, line);
 		} catch {}
 	};

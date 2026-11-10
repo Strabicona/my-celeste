@@ -104,7 +104,7 @@ export async function loadBindings() {
 let target: HTMLElement | null = null;
 const held = new Map<Action, number>(); // action -> how many touches hold it
 
-function send(action: Action, down: boolean) {
+function send(action: Action, down: boolean, auto = false) {
 	const info = keyInfo(bindings[action]);
 	if (!info || !target) return;
 	const ev = new KeyboardEvent(down ? "keydown" : "keyup", {
@@ -117,6 +117,8 @@ function send(action: Action, down: boolean) {
 	// older code reads keyCode/which, which a constructed event leaves at 0
 	Object.defineProperty(ev, "keyCode", { get: () => info.keyCode });
 	Object.defineProperty(ev, "which", { get: () => info.keyCode });
+	// presses made by the page itself (auto-pause) are not the player coming back
+	if (auto) Object.defineProperty(ev, "myCelesteAuto", { value: true });
 	target.dispatchEvent(ev);
 }
 
@@ -343,6 +345,6 @@ export function mountTouchControls(container: HTMLElement, canvas: HTMLCanvasEle
 // a short press of the game's Pause key (used by auto-pause)
 export function pressPause(canvas: HTMLCanvasElement) {
 	if (!target) target = canvas;
-	send("Pause", true);
-	setTimeout(() => send("Pause", false), 120);
+	send("Pause", true, true);
+	setTimeout(() => send("Pause", false, true), 120);
 }

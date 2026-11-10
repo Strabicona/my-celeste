@@ -14,6 +14,7 @@ export const gameState: Stateful<{
 	hasEverest: boolean;
 	memory: number;
 	fps: number;
+	worstMs: number;
 }> = $state({
 	ready: false,
 	initting: false,
@@ -21,6 +22,7 @@ export const gameState: Stateful<{
 	hasEverest: false,
 	memory: -1,
 	fps: -1,
+	worstMs: 0,
 });
 (globalThis as any).gameState = gameState;
 export const loglisteners: ((log: Log) => void)[] = [];
@@ -494,12 +496,37 @@ export async function UploadSteamCloud() {
 
 const SEAMLESSCOUNT = 5;
 
+// the real frame counter (see WatchFrames in loader/Celeste.cs)
+export const frameInfo = { fps: -1, worstMs: 0 };
+
 function monitorFps(): () => void {
 	let stop = false;
-	exports.CelesteLoader.WatchFps((fps: number) => {
-		gameState.fps = stop ? -1 : fps;
-		return stop;
-	});
+	let stallUntil = 0;
+	const oldCounter = () =>
+		exports.CelesteLoader.WatchFps((fps: number) => {
+			gameState.fps = stop ? -1 : fps;
+			return stop;
+		});
+	if (exports.CelesteLoader.WatchFrames) {
+		exports.CelesteLoader.WatchFrames((info: string) => {
+			if (info === "missing") {
+				oldCounter();
+				return true;
+			}
+			const [fps, worst] = info.split("|").map(Number);
+			frameInfo.fps = fps;
+			frameInfo.worstMs = worst;
+			gameState.fps = stop ? -1 : fps;
+			// a stall (a frame over 25 ms, 60 fps is 17 ms) stays on screen 3 s
+			const now = performance.now();
+			if (worst > 25 && (worst >= gameState.worstMs || now > stallUntil)) {
+				gameState.worstMs = worst;
+				stallUntil = now + 3000;
+			} else if (now > stallUntil) gameState.worstMs = 0;
+			if (stop) gameState.worstMs = 0;
+			return stop;
+		});
+	} else oldCounter();
 	return () => {
 		stop = true;
 		gameState.fps = -1;

@@ -23,6 +23,7 @@ import iconComputer from "@ktibow/iconset-material-symbols/computer";
 import { linkFor, profile, PROFILES, ProfileId } from "./profile";
 import { mountTouchControls } from "./touch";
 import { startAwayWatch } from "./away";
+import "./keys";
 import { report, BUILD } from "./report";
 import { gameFileLooksWhole } from "./fs";
 import { removeLocalGame } from "./cloudgame";

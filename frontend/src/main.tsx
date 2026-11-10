@@ -6,7 +6,9 @@ import { store } from "./store";
 import { OpfsExplorer } from "./fs";
 import { Achievements } from "./achievements";
 import { cloudState } from "./cloud";
-import { importSaveFiles, syncNow } from "./savesync";
+import { importSaveFiles, nudgeSaveSync, syncNow } from "./savesync";
+import { gameEvents } from "./game/dotnet";
+import { setupRelaunch } from "./relaunch";
 import { Settings, TouchSettings } from "./settings";
 
 import iconPlayArrow from "@ktibow/iconset-material-symbols/play-arrow";
@@ -98,6 +100,12 @@ document.body.append(switching);
 	});
 	addEventListener("pagehide", () => sessionStorage.removeItem(KEY));
 }
+
+// the game says when it has written its saves: send them then
+gameEvents.onSaved = nudgeSaveSync;
+
+// after 8 hours of the game open: save & quit, then a Relaunch button
+setupRelaunch(startGame);
 
 // opened by a mod switch: press Play by itself once the game is ready
 if (new URLSearchParams(location.search).has("autoplay")) {

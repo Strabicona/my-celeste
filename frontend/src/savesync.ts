@@ -15,7 +15,10 @@ import { readFileRetry } from "./readretry";
 const SAVES_PATH = ["Celeste", "Saves"];
 // every 5 s (was 2 s): Strawberry Jam writes ~80 save files, and each look
 // reads all of them (9 Nov 2026, choppiness after a while)
-const POLL_MS = 5000;
+// The game says when it has written its saves (nudgeSaveSync); this slow look
+// is only a safety net for writes it does not announce. Each look reads every
+// save file (about 20 ms with Strawberry Jam), so it is kept rare.
+const POLL_MS = 30000;
 
 // Every save file the game writes: numbered slots, settings, debug, and
 // Everest's mod files (0-modsave-…, modsettings-…), which hold mod progress.
@@ -265,6 +268,15 @@ export function startSaveSync() {
 		if (document.visibilityState === "hidden") syncOnce(true, true);
 	});
 	window.addEventListener("pagehide", () => syncOnce(true, true));
+}
+
+// the game just finished writing: look a few times while the files settle
+// (a file is sent once two looks in a row see it the same)
+let nudges: number[] = [];
+export function nudgeSaveSync() {
+	if (!started) return;
+	for (const t of nudges) clearTimeout(t);
+	nudges = [500, 2000, 5000].map((ms) => window.setTimeout(() => syncOnce(false), ms));
 }
 
 export async function syncNow() {

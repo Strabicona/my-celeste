@@ -78,6 +78,11 @@ export function startAwayWatch(canvas: HTMLCanvasElement) {
 
 	// health, once a minute while playing
 	let last = { ...sceneInfo, t: performance.now() };
+	// lowest fps seen each second during the minute (shows the hitches)
+	let lowFps = Infinity;
+	setInterval(() => {
+		if (gameState.playing && !document.hidden && gameState.fps > 0) lowFps = Math.min(lowFps, gameState.fps);
+	}, 1000);
 	setInterval(() => {
 		if (!gameState.playing) return;
 		const now = { ...sceneInfo, t: performance.now() };
@@ -87,12 +92,12 @@ export function startAwayWatch(canvas: HTMLCanvasElement) {
 		report(
 			"health",
 			[
-				`fps ${gameState.fps}`,
+				`fps ${gameState.fps}${lowFps !== Infinity ? ` (lowest ${lowFps})` : ""}`,
 				`scene ${["menu", "level", "paused"][now.state] ?? now.state}`,
 				`game memory ${now.managedMB} MB of ${wasmMemoryMB()} MB`,
 				`cleanups/min gen0 ${((now.gen0 - last.gen0) / mins).toFixed(1)} gen1 ${((now.gen1 - last.gen1) / mins).toFixed(1)} gen2 ${((now.gen2 - last.gen2) / mins).toFixed(1)}`,
 				`cleanup pause ${Math.round((now.gcPauseMs - last.gcPauseMs) / mins)} ms/min`,
-				`save check ${sync.lastMs} ms (${sync.files} files)`,
+				`save check ${sync.lastMs} ms (${sync.files} files), game saves ${now.saves - last.saves}`,
 				heap ? `page memory ${Math.round(heap / 1048576)} MB` : "",
 				document.hidden ? "tab hidden" : "",
 			]
@@ -100,5 +105,6 @@ export function startAwayWatch(canvas: HTMLCanvasElement) {
 				.join(", ")
 		);
 		last = now;
+		lowFps = Infinity;
 	}, 60_000);
 }

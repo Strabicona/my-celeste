@@ -236,6 +236,10 @@ async function loadRuntime(url: string) {
 		.withConfig({
 			pthreadPoolInitialSize: 16,
 		})
+		// memory clean-ups: a bigger nursery (default 4 MB) means far fewer
+		// small clean-ups, and fewer short-lived objects pushed into the big
+		// heap, where they force the full clean-ups that freeze the game
+		.withEnvironmentVariable("MONO_GC_PARAMS", "nursery-size=32m")
 		.withRuntimeOptions([
 			// jit functions quickly and jit more functions
 			`--jiterpreter-minimum-trace-hit-count=${500}`,
@@ -510,13 +514,25 @@ export const sceneInfo = {
 	gen2: 0,
 	gcPauseMs: 0,
 	managedMB: 0,
+	saving: 0, // 1 while the game is writing its save files
+	saves: 0, // how many saves the game has finished since it started
 };
+
+// called each time the game finishes writing its save files
+export const gameEvents = { onSaved: () => {} };
 
 function monitorScene(): () => void {
 	let stop = false;
 	exports.CelesteLoader.WatchScene((info: string) => {
-		const [state, gen0, gen1, gen2, pause, mb] = info.split("|").map(Number);
-		Object.assign(sceneInfo, { state, gen0, gen1, gen2, gcPauseMs: pause, managedMB: mb });
+		const [state, gen0, gen1, gen2, pause, mb, saving] = info.split("|").map(Number);
+		const wasSaving = sceneInfo.saving;
+		Object.assign(sceneInfo, { state, gen0, gen1, gen2, gcPauseMs: pause, managedMB: mb, saving: saving || 0 });
+		if (wasSaving && !sceneInfo.saving) {
+			sceneInfo.saves++;
+			try {
+				gameEvents.onSaved();
+			} catch {}
+		}
 		return stop;
 	});
 	return () => {
@@ -534,6 +550,13 @@ export async function setAway(value: boolean) {
 	} catch (e) {
 		console.warn("[away] could not tell the game:", e);
 	}
+}
+
+// Save & Quit like the pause menu does ("level" if it left a level, "menu" if
+// it was already outside one)
+export async function saveAndQuit(): Promise<string> {
+	if (!exports?.CelesteLoader?.SaveAndQuit) return "error: SaveAndQuit missing in this game build";
+	return await exports.CelesteLoader.SaveAndQuit();
 }
 
 // size of the game's whole memory (MB)

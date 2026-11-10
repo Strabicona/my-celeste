@@ -317,6 +317,7 @@ public static partial class CelesteLoader
         return Task.Run(async () =>
         {
             PropertyInfo sceneProp = null;
+            PropertyInfo savingProp = null;
             Frozen frozen = null;
             object frozenLevel = null;
             while (true)
@@ -350,13 +351,61 @@ public static partial class CelesteLoader
                     }
                 }
                 catch { }
+                int saving = 0;
+                try
+                {
+                    if (savingProp == null && celeste != null)
+                        savingProp = celeste.GetType("Celeste.UserIO")?.GetProperty("Saving", BindingFlags.Static | BindingFlags.Public);
+                    if (savingProp != null && (bool)savingProp.GetValue(null)) saving = 1;
+                }
+                catch { }
                 string info = state + "|" + GC.CollectionCount(0) + "|" + GC.CollectionCount(1) + "|" + GC.CollectionCount(2)
                     + "|" + (long)GC.GetTotalPauseDuration().TotalMilliseconds
-                    + "|" + (GC.GetTotalMemory(false) / (1024 * 1024));
+                    + "|" + (GC.GetTotalMemory(false) / (1024 * 1024))
+                    + "|" + saving;
                 if (callback(info)) break;
                 await Task.Delay(frozen != null ? 50 : 250);
             }
         });
+    }
+
+    // Save & Quit, as the pause menu does it: inside a level the game leaves
+    // through LevelExit(SaveAndQuit), which writes the file with the current
+    // checkpoint; anywhere else the file is already saved.
+    [JSExport]
+    internal static Task<string> SaveAndQuit()
+    {
+        return Task.FromResult(SaveAndQuitNow());
+    }
+
+    static string SaveAndQuitNow()
+    {
+        try
+        {
+            var sceneProp = celeste.GetType("Monocle.Engine").GetProperty("Scene", BindingFlags.Static | BindingFlags.Public);
+            var scene = sceneProp.GetValue(null);
+            if (scene == null || scene.GetType().FullName != "Celeste.Level") return "menu";
+            object Member(string name)
+            {
+                var t = scene.GetType();
+                var f = t.GetField(name, BindingFlags.Instance | BindingFlags.Public);
+                if (f != null) return f.GetValue(scene);
+                return t.GetProperty(name, BindingFlags.Instance | BindingFlags.Public)?.GetValue(scene);
+            }
+            var session = Member("Session");
+            var snow = Member("HiresSnow");
+            var exitType = celeste.GetType("Celeste.LevelExit");
+            var modeType = celeste.GetType("Celeste.LevelExit+Mode");
+            var mode = Enum.Parse(modeType, "SaveAndQuit");
+            var exit = Activator.CreateInstance(exitType, mode, session, snow);
+            sceneProp.SetValue(null, exit);
+            Console.WriteLine("[relaunch] save and quit started");
+            return "level";
+        }
+        catch (Exception e)
+        {
+            return "error: " + e.Message;
+        }
     }
 
     [JSExport]

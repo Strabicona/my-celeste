@@ -102,30 +102,40 @@ async function takeOver() {
 	if (!locks?.request) return;
 	const hold = () => new Promise<void>(() => {});
 	await new Promise<void>((resolve) => {
-		let settled = false;
-		const done = () => {
-			if (!settled) {
-				settled = true;
-				resolve();
-			}
-		};
-		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), WAIT_MS);
+		// while waiting, keep asking (a tab that Chrome had put to sleep hears it
+		// as soon as it wakes up, e.g. when you click on it)
+		const ask = setInterval(() => channel?.postMessage({ type: "takeover", id }), 2000);
+		// the old tab has not let go after a few seconds: say so, and keep
+		// waiting; the game starts by itself the moment the files are free
+		let note: HTMLDivElement | null = null;
+		const slow = setTimeout(() => {
+			console.warn("[tabs] the other tab did not answer, waiting for it");
+			note = document.createElement("div");
+			note.style.cssText =
+				"position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1em;" +
+				"background:#111;color:#eee;font:16px system-ui,sans-serif;text-align:center;padding:1em;";
+			note.innerHTML =
+				"<p style='font-weight:600;font-size:1.2em;margin:0'>Celeste is still open in another tab that is not answering.</p>" +
+				"<p style='margin:0'>Close that tab (or click on it once). The game starts here by itself as soon as it lets go.</p>";
+			document.documentElement.append(note);
+		}, WAIT_MS);
 		locks
-			.request(LOCK, { signal: controller.signal }, () => {
-				clearTimeout(timer);
-				done();
+			.request(LOCK, () => {
+				clearInterval(ask);
+				clearTimeout(slow);
+				if (note) {
+					note.remove();
+					console.log("[tabs] the other tab let go, starting");
+				}
+				resolve();
 				return hold();
 			})
-			.catch(() => {
-				// the old tab did not let go in time (frozen or stuck): take the lock anyway
-				console.warn("[tabs] the other tab did not answer, starting anyway");
-				locks
-					.request(LOCK, { steal: true }, () => {
-						done();
-						return hold();
-					})
-					.catch(() => done());
+			.catch((e: unknown) => {
+				clearInterval(ask);
+				clearTimeout(slow);
+				note?.remove();
+				console.warn("[tabs] could not wait for the other tab:", e);
+				resolve();
 			});
 	});
 }

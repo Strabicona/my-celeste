@@ -21,8 +21,12 @@ export async function readFileRetry(
 			const bytes = new Uint8Array(await file.arrayBuffer());
 			return { bytes, size: file.size, lastModified: file.lastModified };
 		} catch (e) {
-			if ((e as DOMException)?.name === "NotFoundError" || attempt >= TRIES)
-				throw e;
+			if ((e as DOMException)?.name === "NotFoundError") throw e;
+			if (attempt >= TRIES) {
+				// keep the error's kind (callers check it), but say which file it was
+				const err = e as DOMException;
+				throw new DOMException(`${handle.name}: ${err?.message ?? err}`, err?.name ?? "Error");
+			}
 			console.warn(`[files] ${handle.name} busy, trying again (${attempt})`);
 			await new Promise((r) => setTimeout(r, WAIT_MS));
 		}

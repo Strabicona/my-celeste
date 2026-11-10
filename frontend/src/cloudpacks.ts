@@ -78,13 +78,17 @@ export async function removeLocalMods() {
 export async function downloadPack(
 	name: string,
 	info: PackInfo,
-	onProgress: (fraction: number) => void
+	onProgress: (fraction: number) => void,
+	// only the first `limit` bytes (the no-sound links stop before the music)
+	limit?: number
 ) {
+	const total = limit && limit < info.size ? limit : info.size;
+	const pieces = Math.min(info.pieces, Math.ceil(total / PIECE));
 	let next = 0;
 	let got = 0;
 	const pending = new Map<number, Promise<Uint8Array>>();
 	const fetchAhead = () => {
-		while (pending.size < PARALLEL + 2 && next < info.pieces) {
+		while (pending.size < PARALLEL + 2 && next < pieces) {
 			pending.set(next, getPackPiece(name, info.version, next));
 			next++;
 		}
@@ -92,16 +96,19 @@ export async function downloadPack(
 	let current = 0;
 	const stream = new ReadableStream<Uint8Array>({
 		async pull(controller) {
-			if (current >= info.pieces) {
+			if (current >= pieces) {
+				// cut short: add the end-of-archive mark so the unpacker stops cleanly
+				if (total < info.size) controller.enqueue(new Uint8Array(1024));
 				controller.close();
 				return;
 			}
 			fetchAhead();
-			const data = await pending.get(current)!;
+			let data = await pending.get(current)!;
 			pending.delete(current);
 			current++;
+			if (got + data.length > total) data = data.slice(0, total - got);
 			got += data.length;
-			onProgress(Math.min(1, got / Math.max(1, info.size)));
+			onProgress(Math.min(1, got / Math.max(1, total)));
 			controller.enqueue(data);
 		},
 	});

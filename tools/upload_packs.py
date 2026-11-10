@@ -24,6 +24,7 @@ import urllib.request
 
 import xxhash
 import yaml
+import zipfile
 
 BASE = os.environ.get("MY_CELESTE_URL", "https://my-celeste.pages.dev").rstrip("/")
 PIECE = 1_400_000
@@ -35,6 +36,17 @@ PACKS = {
     "mods-ds": ["Monika's D-Sides", "foxhair (Bangs Only)"],
 }
 NOT_MODS = {"Everest", "EverestCore", "Celeste"}
+
+# music/sound mods: put LAST in each pack, after a tiny stand-in ("stub") of
+# each. The no-sound links download only up to the real ones, so they get the
+# stubs (which satisfy the other mods' dependency on them) and no music.
+SOUND_MODS = {
+    "StrawberryJam2021AudioA",
+    "StrawberryJam2021AudioB",
+    "StrawberryJam2021AudioC",
+    "Monika's D-Sides Audio",
+}
+LAYOUT = 2  # bump when the pack's layout changes, so packs are rebuilt
 
 
 def get(url, tries=5, timeout=300):
@@ -113,10 +125,23 @@ def download_mod(name, info, folder):
     raise SystemExit(f"could not download {name}")
 
 
-def make_tar(files, tar_path):
+def make_tar(files, tar_path, sound_from_index=None):
+    """Writes the tar; returns the byte where entry `sound_from_index` starts."""
+    sound_from = None
     with tarfile.open(tar_path, "w", format=tarfile.USTAR_FORMAT) as t:
-        for arc, src in files:
+        for i, (arc, src) in enumerate(files):
+            if i == sound_from_index:
+                sound_from = t.offset
             t.add(src, arcname=arc, recursive=False)
+    return sound_from
+
+
+def make_stub(name, version, folder):
+    """A mod that only says its name and version: enough for dependencies."""
+    path = os.path.join(folder, "stub-" + safe(name))
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("everest.yaml", f"- Name: {json.dumps(name)}\n  Version: {version}\n")
+    return path
 
 
 def upload(pack, tar_path, version, extra, token):
@@ -177,7 +202,7 @@ def main():
     for pack, roots in PACKS.items():
         mods = closure(roots, updates, graph)
         manifest = [[n, m.get("Version"), (m.get("xxHash") or [""])[0]] for n, m in mods.items()]
-        version = "m" + hashlib.sha1(json.dumps(manifest).encode()).hexdigest()[:12]
+        version = "m" + hashlib.sha1(json.dumps([LAYOUT, manifest]).encode()).hexdigest()[:12]
         total = sum(m.get("Size") or 0 for m in mods.values())
         print(f"{pack}: {len(mods)} mods, {total / 1e6:.0f} MB")
         have = current(pack, token)
@@ -186,16 +211,28 @@ def main():
             continue
         folder = os.path.join(work, pack)
         os.makedirs(folder, exist_ok=True)
-        files = []
+        files, sound = [], []
         for name, info in mods.items():
             path, n = download_mod(name, info, folder)
-            files.append((f"Celeste/Mods/{os.path.basename(path)}", path))
+            entry = (f"Celeste/Mods/{safe(name)}", path)
+            (sound if name in SOUND_MODS else files).append(entry)
             print(f"  got {name} {info.get('Version')} ({n / 1e6:.1f} MB)")
+        # stand-ins first, then the real sound mods (same file names: the full
+        # links overwrite the stand-in with the real one)
+        stubs = [
+            (f"Celeste/Mods/{safe(name)}", make_stub(name, mods[name].get("Version"), folder))
+            for name in sorted(mods) if name in SOUND_MODS
+        ]
+        ordered = files + stubs + sound
         tar_path = os.path.join(work, pack + ".tar")
-        make_tar(files, tar_path)
-        for _, p in files:
+        sound_from = make_tar(ordered, tar_path, len(files) + len(stubs) if sound else None)
+        for _, p in ordered:
             os.remove(p)
-        upload(pack, tar_path, version, {"mods": [[n, v] for n, v, _ in manifest]}, token)
+        extra = {"mods": [[n, v] for n, v, _ in manifest]}
+        if sound_from is not None:
+            extra["soundFrom"] = sound_from
+            print(f"  no-sound links stop at {sound_from / 1e6:.0f} MB")
+        upload(pack, tar_path, version, extra, token)
         os.remove(tar_path)
     print("all packs online")
 

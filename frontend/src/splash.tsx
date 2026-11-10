@@ -251,7 +251,8 @@ const CloudIntro: Component<
 				// "|w2": unpacked with the fixed writer (8 Nov 2026). iPhones/iPads that
 				// unpacked mods before that fix have padded, damaged zips: they fetch the
 				// mods again once. Other devices' older copies were always fine.
-				const baseMods = mods ? profile!.pack + ":" + packKey(mods) : null;
+				const noSound = profile!.noSound && !!mods?.soundFrom;
+				const baseMods = mods ? profile!.pack + ":" + packKey(mods) + (noSound ? ":nosound" : "") : null;
 				const wantMods = baseMods ? baseMods + "|w2" : null;
 				const haveMods = await localPack("mods");
 				const iOS =
@@ -261,9 +262,14 @@ const CloudIntro: Component<
 				if (!modsOk) {
 					await removeLocalMods();
 					if (mods) {
-						this.status = `Downloading ${profile!.label}...`;
+						this.status = `Downloading ${profile!.label}${noSound ? " (no sound)" : ""}...`;
 						this.showProgress = true;
-						await downloadPack(profile!.pack, mods, (f) => (this.percent = f * 100));
+						await downloadPack(
+							profile!.pack,
+							mods,
+							(f) => (this.percent = f * 100),
+							noSound ? mods.soundFrom : undefined
+						);
 						await setLocalPack("mods", wantMods);
 					}
 				}
@@ -360,6 +366,15 @@ const CloudIntro: Component<
 					<Button type="primary" icon="left" disabled={false} on:click={() => location.assign(linkFor("ds"))}>
 						<Icon icon={iconFolderZip} />
 						{PROFILES.ds.label}
+					</Button>
+					<p>No sound (lighter, for phones):</p>
+					<Button type="normal" icon="left" disabled={false} on:click={() => location.assign(linkFor("sjq"))}>
+						<Icon icon={iconFolderZip} />
+						{PROFILES.sjq.label}
+					</Button>
+					<Button type="normal" icon="left" disabled={false} on:click={() => location.assign(linkFor("dsq"))}>
+						<Icon icon={iconFolderZip} />
+						{PROFILES.dsq.label}
 					</Button>
 				</div>
 			)}

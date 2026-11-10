@@ -249,12 +249,77 @@ public static partial class CelesteLoader
     // (added 8-9 Nov 2026). Only reads; never changes the game.
     // "state|gen0|gen1|gen2|gcPauseMs|managedMB"; state: 0 not in a level,
     // 1 in a level and running, 2 in a level and paused
+    // Away freeze (10 Nov 2026): Celeste's file clock keeps counting in the pause
+    // menu. While the page says you are away and the level is paused, the file
+    // time, the chapter's time played and the run time are held at the value they
+    // had when the freeze began. Gameplay itself is untouched.
+    static volatile bool away;
+    [JSExport]
+    internal static Task SetAway(bool value)
+    {
+        away = value;
+        return Task.CompletedTask;
+    }
+
+    sealed class Frozen
+    {
+        public object Save, Session, Mode;
+        public long SaveTime, SessionTime, ModeTime;
+    }
+
+    static FieldInfo F(object o, string name) =>
+        o?.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+    static Frozen FreezeStart(object level)
+    {
+        try
+        {
+            var save = celeste.GetType("Celeste.SaveData")?.GetField("Instance", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
+            var session = F(level, "Session")?.GetValue(level);
+            if (save == null || session == null) return null;
+            var fr = new Frozen { Save = save, Session = session };
+            fr.SaveTime = (long)F(save, "Time").GetValue(save);
+            fr.SessionTime = (long)F(session, "Time").GetValue(session);
+            // the chapter's stats: Everest's GetAreaStatsFor(AreaKey), else Areas[ID]
+            var key = F(session, "Area").GetValue(session);
+            object stats = null;
+            var getFor = save.GetType().GetMethod("GetAreaStatsFor", BindingFlags.Instance | BindingFlags.Public);
+            if (getFor != null) stats = getFor.Invoke(save, [key]);
+            if (stats != null)
+            {
+                int mode = Convert.ToInt32(F(key, "Mode").GetValue(key));
+                var modes = (Array)F(stats, "Modes").GetValue(stats);
+                fr.Mode = modes.GetValue(mode);
+                fr.ModeTime = (long)F(fr.Mode, "TimePlayed").GetValue(fr.Mode);
+            }
+            return fr;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[away] freeze could not start: " + e.Message);
+            return null;
+        }
+    }
+
+    static void FreezeHold(Frozen fr)
+    {
+        try
+        {
+            F(fr.Save, "Time").SetValue(fr.Save, fr.SaveTime);
+            F(fr.Session, "Time").SetValue(fr.Session, fr.SessionTime);
+            if (fr.Mode != null) F(fr.Mode, "TimePlayed").SetValue(fr.Mode, fr.ModeTime);
+        }
+        catch { }
+    }
+
     [JSExport]
     internal static Task WatchScene([JSMarshalAs<JSType.Function<JSType.String, JSType.Boolean>>] Func<string, bool> callback)
     {
         return Task.Run(async () =>
         {
             PropertyInfo sceneProp = null;
+            Frozen frozen = null;
+            object frozenLevel = null;
             while (true)
             {
                 int state = 0;
@@ -268,13 +333,30 @@ public static partial class CelesteLoader
                         var paused = scene.GetType().GetField("Paused", BindingFlags.Instance | BindingFlags.Public);
                         state = paused != null && (bool)paused.GetValue(scene) ? 2 : 1;
                     }
+                    if (away && state == 2)
+                    {
+                        if (frozen == null || frozenLevel != scene)
+                        {
+                            frozen = FreezeStart(scene);
+                            frozenLevel = scene;
+                            if (frozen != null) Console.WriteLine("[away] clock frozen");
+                        }
+                        else FreezeHold(frozen);
+                    }
+                    else if (frozen != null)
+                    {
+                        FreezeHold(frozen); // one last time, then let it run
+                        frozen = null;
+                        frozenLevel = null;
+                        Console.WriteLine("[away] clock running again");
+                    }
                 }
                 catch { }
                 string info = state + "|" + GC.CollectionCount(0) + "|" + GC.CollectionCount(1) + "|" + GC.CollectionCount(2)
                     + "|" + (long)GC.GetTotalPauseDuration().TotalMilliseconds
                     + "|" + (GC.GetTotalMemory(false) / (1024 * 1024));
                 if (callback(info)) break;
-                await Task.Delay(1000);
+                await Task.Delay(250);
             }
         });
     }

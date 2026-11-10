@@ -1,32 +1,47 @@
-// Which link the page was opened with. Each link loads the same game with its
-// own mod pack and keeps its own saves online:
-//   ?mods=sj      Strawberry Jam
-//   ?mods=dsides  Monika's D-Sides
+// Which link the page was opened with. Each link loads the same game with a
+// mod pack; the no-sound links load the same pack without its music and sound
+// (for phones with little memory) and share the saves of their sound version:
+//   ?mods=sj              Strawberry Jam
+//   ?mods=dsides          Monika's D-Sides
+//   ?mods=sj-nosound      Strawberry Jam, no sound
+//   ?mods=dsides-nosound  D-Sides, no sound
+export type ProfileId = "sj" | "ds" | "sjq" | "dsq";
+
 export type Profile = {
-	id: "sj" | "ds";
+	id: ProfileId;
 	label: string;
 	pack: "mods-sj" | "mods-ds";
+	noSound: boolean;
 	// online save names are "<savePrefix>0.celeste", "<savePrefix>settings.celeste", ...
 	savePrefix: string;
 };
 
-export const PROFILES: Record<Profile["id"], Profile> = {
-	sj: { id: "sj", label: "Strawberry Jam", pack: "mods-sj", savePrefix: "sj~" },
-	ds: { id: "ds", label: "D-Sides", pack: "mods-ds", savePrefix: "ds~" },
+export const PROFILES: Record<ProfileId, Profile> = {
+	sj: { id: "sj", label: "Strawberry Jam", pack: "mods-sj", noSound: false, savePrefix: "sj~" },
+	ds: { id: "ds", label: "D-Sides", pack: "mods-ds", noSound: false, savePrefix: "ds~" },
+	sjq: { id: "sjq", label: "Strawberry Jam", pack: "mods-sj", noSound: true, savePrefix: "sj~" },
+	dsq: { id: "dsq", label: "D-Sides", pack: "mods-ds", noSound: true, savePrefix: "ds~" },
 };
 
-export const LINKS: Record<Profile["id"], string> = { sj: "sj", ds: "dsides" };
+export const LINKS: Record<ProfileId, string> = {
+	sj: "sj",
+	ds: "dsides",
+	sjq: "sj-nosound",
+	dsq: "dsides-nosound",
+};
 
 function pick(): Profile | null {
 	const v = (new URLSearchParams(location.search).get("mods") || "").toLowerCase();
 	if (v === "sj" || v === "strawberryjam") return PROFILES.sj;
 	if (v === "dsides" || v === "ds" || v === "d-sides") return PROFILES.ds;
+	if (v === "sj-nosound" || v === "sjq") return PROFILES.sjq;
+	if (v === "dsides-nosound" || v === "dsq") return PROFILES.dsq;
 	return null;
 }
 
 export const profile: Profile | null = pick();
 
-export function linkFor(id: Profile["id"]): string {
+export function linkFor(id: ProfileId): string {
 	const u = new URL(location.href);
 	u.search = "";
 	u.searchParams.set("mods", LINKS[id]);

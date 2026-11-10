@@ -6,12 +6,13 @@
 //   - the tab goes to the background, or
 //   - nothing was pressed for 30 seconds (keys, touch buttons, controller).
 // It only presses Pause when the game says it is in a running level, so it
-// never unpauses you.
+// never unpauses you. While away and paused, the game also holds its clock
+// (file time, chapter time played, run time), until you press something again.
 //
 // Health report: once a minute while playing, frame rate, memory and the
 // game's memory clean-ups go to the cloud (meta key "health"), to find why it
 // gets choppy after a while.
-import { gameState, sceneInfo, wasmMemoryMB } from "./game/dotnet";
+import { gameState, sceneInfo, setAway, wasmMemoryMB } from "./game/dotnet";
 import { loadBindings, pressPause } from "./touch";
 import { report } from "./report";
 import { syncStats } from "./savesync";
@@ -19,7 +20,14 @@ import { syncStats } from "./savesync";
 const IDLE_MS = 30_000;
 
 let lastInput = Date.now();
-const touched = () => (lastInput = Date.now());
+let isAway = false;
+const touched = () => {
+	lastInput = Date.now();
+	if (isAway && !document.hidden) {
+		isAway = false;
+		setAway(false);
+	}
+};
 for (const ev of ["keydown", "keyup", "pointerdown", "pointermove", "wheel"]) {
 	addEventListener(ev, touched, { capture: true, passive: true });
 }
@@ -41,7 +49,14 @@ function pollPads() {
 
 let lastPause = 0;
 function autoPause(canvas: HTMLCanvasElement, why: string) {
-	if (!gameState.playing || sceneInfo.state !== 1) return;
+	if (!gameState.playing) return;
+	// away: the game holds its clock while paused (file time counts in the
+	// pause menu otherwise)
+	if (!isAway) {
+		isAway = true;
+		setAway(true);
+	}
+	if (sceneInfo.state !== 1) return;
 	if (Date.now() - lastPause < 3000) return; // give the menu time to open
 	lastPause = Date.now();
 	// read the Pause key from the save again, in case it was changed in the game

@@ -525,6 +525,15 @@ function monitorScene(): () => void {
 	};
 }
 
+// tell the game the player is away (freezes the clock while paused, see SetAway)
+export async function setAway(value: boolean) {
+	try {
+		await exports?.CelesteLoader?.SetAway(value);
+	} catch (e) {
+		console.warn("[away] could not tell the game:", e);
+	}
+}
+
 // size of the game's whole memory (MB)
 export function wasmMemoryMB(): number {
 	try {

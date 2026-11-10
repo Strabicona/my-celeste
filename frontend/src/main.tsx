@@ -20,7 +20,7 @@ import iconMenu from "@ktibow/iconset-material-symbols/menu";
 import iconClose from "@ktibow/iconset-material-symbols/close";
 import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
 import iconComputer from "@ktibow/iconset-material-symbols/computer";
-import { linkFor, profile, PROFILES } from "./profile";
+import { linkFor, profile, PROFILES, ProfileId } from "./profile";
 import { mountTouchControls } from "./touch";
 import { startAwayWatch } from "./away";
 import { report, BUILD } from "./report";
@@ -66,9 +66,9 @@ async function startGame() {
 }
 
 // Mod switch with the game open: save, stop, reopen the other mod and start it.
-async function switchModsTo(to: "sj" | "ds") {
+async function switchModsTo(to: ProfileId) {
 	if (profile?.id === to) return;
-	switching.textContent = `Switching to ${PROFILES[to].label}... saving first`;
+	switching.textContent = `Switching to ${PROFILES[to].label}${PROFILES[to].noSound ? " (no sound)" : ""}... saving first`;
 	switching.style.display = "flex";
 	try {
 		await syncNow();
@@ -315,7 +315,7 @@ const TopBar: Component<
 
 	const close = () => (this.open = false);
 
-	const switchMods = (to: "sj" | "ds") => {
+	const switchMods = (to: ProfileId) => {
 		close();
 		switchModsTo(to);
 	};
@@ -457,6 +457,15 @@ const TopBar: Component<
 						</Button>
 						<Button on:click={() => switchMods("ds")} icon="none" type={pick(profile?.id === "ds")} disabled={false} title="D-Sides (own save)">
 							{PROFILES.ds.label}
+						</Button>
+					</div>
+					<div class="status">No sound (lighter, for phones; same saves)</div>
+					<div class="row">
+						<Button on:click={() => switchMods("sjq")} icon="none" type={pick(profile?.id === "sjq")} disabled={false} title="Strawberry Jam without music and sound">
+							{PROFILES.sjq.label}
+						</Button>
+						<Button on:click={() => switchMods("dsq")} icon="none" type={pick(profile?.id === "dsq")} disabled={false} title="D-Sides without music and sound">
+							{PROFILES.dsq.label}
 						</Button>
 					</div>
 				</section>

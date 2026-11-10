@@ -181,6 +181,7 @@ export type PackInfo = {
 	size: number;
 	uploaded: number;
 	game?: string; // for the Everest pack: which game copy it was patched from
+	soundFrom?: number; // mod packs: byte where the music/sound mods start (stubs before it)
 };
 
 export async function packInfo(name: string): Promise<PackInfo | null> {

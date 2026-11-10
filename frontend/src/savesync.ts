@@ -112,13 +112,16 @@ async function writeMarker(value: string) {
 // different link uses it, anything newer than that link's online copy is sent
 // up, then the folder is emptied.
 async function switchSaveFolder(all: CloudSave[]) {
-	const mine = profile?.id ?? "base";
-	const owner = (await readMarker()) ?? "base"; // older browsers: unprefixed saves
+	// the marker holds the save prefix ("p:sj~"); older markers hold a link id
+	const mine = "p:" + PREFIX;
+	const raw = (await readMarker()) ?? "base"; // older browsers: unprefixed saves
+	const owner = raw.startsWith("p:")
+		? raw
+		: raw === "base"
+			? "p:"
+			: "p:" + (Object.values(PROFILES).find((p) => p.id === raw)?.savePrefix ?? "?");
 	if (owner === mine) return;
-	const ownerPrefix =
-		owner === "base"
-			? ""
-			: (Object.values(PROFILES).find((p) => p.id === owner)?.savePrefix ?? null);
+	const ownerPrefix = owner === "p:?" ? null : owner.slice(2);
 	const local = await readLocal();
 	if (ownerPrefix !== null) {
 		const remote = new Map(ownRemote(all, ownerPrefix).map((r) => [r.name, r]));

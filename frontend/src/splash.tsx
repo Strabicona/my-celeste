@@ -227,13 +227,26 @@ const CloudIntro: Component<
 			const game = await gameInfo();
 			if (game) {
 				const local = fresh ? null : await localGameVersion();
+				// plain Celeste needs the game file without Everest: a device that
+				// has Everest in it fetches the plain game again
+				const plain = profile!.pack === null;
+				const hasEverest = (await localPack("everest")) !== null;
 				// only reuse this browser's files if they match the online copy
-				if (!(initialHasContent && initialIsPatched && local === gameKey(game))) {
+				if (!(initialHasContent && initialIsPatched && local === gameKey(game)) || (plain && hasEverest)) {
 					// this browser has no game yet, or an older copy: fetch the current one
 					await removeLocalGame();
 					this.status = "Downloading the game...";
 					this.showProgress = true;
 					await downloadGame(game, (f) => (this.percent = f * 100));
+				}
+
+				if (plain) {
+					await removeLocalMods();
+					this.status = "Starting the engine...";
+					await this.start();
+					startSaveSync();
+					this["on:next"]("done-animated");
+					return;
 				}
 
 				// Everest, already patched into this game copy (made once, see below)
@@ -247,7 +260,7 @@ const CloudIntro: Component<
 				}
 
 				// this link's mods
-				const mods = await packInfo(profile!.pack);
+				const mods = await packInfo(profile!.pack!);
 				// "|w2": unpacked with the fixed writer (8 Nov 2026). iPhones/iPads that
 				// unpacked mods before that fix have padded, damaged zips: they fetch the
 				// mods again once. Other devices' older copies were always fine.
@@ -265,7 +278,7 @@ const CloudIntro: Component<
 						this.status = `Downloading ${profile!.label}${noSound ? " (no sound)" : ""}...`;
 						this.showProgress = true;
 						await downloadPack(
-							profile!.pack,
+							profile!.pack!,
 							mods,
 							(f) => (this.percent = f * 100),
 							noSound ? mods.soundFrom : undefined
@@ -375,6 +388,10 @@ const CloudIntro: Component<
 					<Button type="normal" icon="left" disabled={false} on:click={() => location.assign(linkFor("dsq"))}>
 						<Icon icon={iconFolderZip} />
 						{PROFILES.dsq.label}
+					</Button>
+					<Button type="normal" icon="left" disabled={false} on:click={() => location.assign(linkFor("plain"))}>
+						<Icon icon={iconFolderZip} />
+						Plain Celeste (no mods)
 					</Button>
 				</div>
 			)}

@@ -468,6 +468,12 @@ const TopBar: Component<
 							{PROFILES.dsq.label}
 						</Button>
 					</div>
+					<div class="status">Plain Celeste (no Everest, no mods, your original save)</div>
+					<div class="row">
+						<Button on:click={() => switchMods("plain")} icon="none" type={pick(profile?.id === "plain")} disabled={false} title="Plain Celeste">
+							{PROFILES.plain.label}
+						</Button>
+					</div>
 				</section>
 
 				<section>

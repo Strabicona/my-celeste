@@ -79,7 +79,8 @@ for (const level of ["log", "warn", "info"] as const) {
 		orig(...args);
 		try {
 			const line = args.map(text).join(" ");
-			if (ERRORISH.test(line) && !line.startsWith("[saves]")) report("console." + level, line);
+			if ((ERRORISH.test(line) && !line.startsWith("[saves]")) || line.startsWith("[away]"))
+				report("console." + level, line);
 		} catch {}
 	};
 }

@@ -272,19 +272,25 @@ public static partial class CelesteLoader
 
     static Frozen FreezeStart(object level)
     {
+        // each part on its own: a part that fails never stops the others
+        var fr = new Frozen();
         try
         {
-            var save = celeste.GetType("Celeste.SaveData")?.GetField("Instance", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
-            var session = F(level, "Session")?.GetValue(level);
-            if (save == null || session == null) return null;
-            var fr = new Frozen { Save = save, Session = session };
-            fr.SaveTime = (long)F(save, "Time").GetValue(save);
-            fr.SessionTime = (long)F(session, "Time").GetValue(session);
-            // the chapter's stats: Everest's GetAreaStatsFor(AreaKey), else Areas[ID]
-            var key = F(session, "Area").GetValue(session);
-            object stats = null;
-            var getFor = save.GetType().GetMethod("GetAreaStatsFor", BindingFlags.Instance | BindingFlags.Public);
-            if (getFor != null) stats = getFor.Invoke(save, [key]);
+            fr.Save = celeste.GetType("Celeste.SaveData")?.GetField("Instance", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
+            if (fr.Save != null) fr.SaveTime = (long)F(fr.Save, "Time").GetValue(fr.Save);
+        }
+        catch (Exception e) { fr.Save = null; Console.WriteLine("[away] file time not held: " + e.Message); }
+        try
+        {
+            fr.Session = F(level, "Session")?.GetValue(level);
+            if (fr.Session != null) fr.SessionTime = (long)F(fr.Session, "Time").GetValue(fr.Session);
+        }
+        catch (Exception e) { fr.Session = null; Console.WriteLine("[away] run time not held: " + e.Message); }
+        try
+        {
+            var key = F(fr.Session, "Area").GetValue(fr.Session);
+            var getFor = fr.Save.GetType().GetMethod("GetAreaStatsFor", BindingFlags.Instance | BindingFlags.Public);
+            var stats = getFor?.Invoke(fr.Save, [key]);
             if (stats != null)
             {
                 int mode = Convert.ToInt32(F(key, "Mode").GetValue(key));
@@ -292,24 +298,17 @@ public static partial class CelesteLoader
                 fr.Mode = modes.GetValue(mode);
                 fr.ModeTime = (long)F(fr.Mode, "TimePlayed").GetValue(fr.Mode);
             }
-            return fr;
         }
-        catch (Exception e)
-        {
-            Console.WriteLine("[away] freeze could not start: " + e.Message);
-            return null;
-        }
+        catch (Exception e) { fr.Mode = null; Console.WriteLine("[away] chapter time not held: " + e.Message); }
+        Console.WriteLine($"[away] clock frozen (file {(fr.Save != null ? "yes" : "no")}, run {(fr.Session != null ? "yes" : "no")}, chapter {(fr.Mode != null ? "yes" : "no")})");
+        return fr;
     }
 
     static void FreezeHold(Frozen fr)
     {
-        try
-        {
-            F(fr.Save, "Time").SetValue(fr.Save, fr.SaveTime);
-            F(fr.Session, "Time").SetValue(fr.Session, fr.SessionTime);
-            if (fr.Mode != null) F(fr.Mode, "TimePlayed").SetValue(fr.Mode, fr.ModeTime);
-        }
-        catch { }
+        try { if (fr.Save != null) F(fr.Save, "Time").SetValue(fr.Save, fr.SaveTime); } catch { }
+        try { if (fr.Session != null) F(fr.Session, "Time").SetValue(fr.Session, fr.SessionTime); } catch { }
+        try { if (fr.Mode != null) F(fr.Mode, "TimePlayed").SetValue(fr.Mode, fr.ModeTime); } catch { }
     }
 
     [JSExport]
@@ -339,7 +338,6 @@ public static partial class CelesteLoader
                         {
                             frozen = FreezeStart(scene);
                             frozenLevel = scene;
-                            if (frozen != null) Console.WriteLine("[away] clock frozen");
                         }
                         else FreezeHold(frozen);
                     }
@@ -356,7 +354,7 @@ public static partial class CelesteLoader
                     + "|" + (long)GC.GetTotalPauseDuration().TotalMilliseconds
                     + "|" + (GC.GetTotalMemory(false) / (1024 * 1024));
                 if (callback(info)) break;
-                await Task.Delay(250);
+                await Task.Delay(frozen != null ? 50 : 250);
             }
         });
     }

@@ -528,7 +528,9 @@ function monitorScene(): () => void {
 // tell the game the player is away (freezes the clock while paused, see SetAway)
 export async function setAway(value: boolean) {
 	try {
-		await exports?.CelesteLoader?.SetAway(value);
+		if (!exports?.CelesteLoader?.SetAway) throw new Error("SetAway missing in this game build");
+		await exports.CelesteLoader.SetAway(value);
+		console.log(`[away] told the game: ${value ? "away" : "back"}`);
 	} catch (e) {
 		console.warn("[away] could not tell the game:", e);
 	}

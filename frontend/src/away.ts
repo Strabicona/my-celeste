@@ -13,7 +13,7 @@
 // game's memory clean-ups go to the cloud (meta key "health"), to find why it
 // gets choppy after a while.
 import { frameInfo, gameState, sceneInfo, setAway, wasmMemoryMB } from "./game/dotnet";
-import { loadBindings, pressPause } from "./touch";
+import { loadBindings, pressPause } from "./gamekeys";
 import { report } from "./report";
 import { syncStats } from "./savesync";
 
@@ -26,8 +26,7 @@ let isAway = false;
 // the key that types "-" on a Portuguese keyboard), space, both shifts, tab,
 // esc. Mouse, wheel, fullscreen and switching to the tab do not count, and a
 // key only counts while the tab has focus. Presses made by the page itself
-// (auto-pause pressing Pause) never count. The on-screen buttons on mobile send
-// the same keys, so they count too; so does a controller.
+// (auto-pause pressing Pause) never count. A controller counts too.
 const GAME_KEYS = new Set([
 	"KeyW", "KeyA", "KeyS", "KeyD",
 	"Minus", "Slash", "Period", "NumpadSubtract", "NumpadDecimal",

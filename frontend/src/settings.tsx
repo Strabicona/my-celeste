@@ -1,5 +1,4 @@
 import { Switch } from "./ui/Switch";
-import { Button } from "./ui/Button";
 import { store } from "./store";
 import { TextField } from "./ui/TextField";
 import { analyticsEnabled, event } from "./analytics";
@@ -160,56 +159,6 @@ const AccentPicker: Component<{}> = function () {
 					)}
 				</button>
 			))}
-		</div>
-	);
-};
-
-// Mobile mode's joystick: fixed (movable) or following the thumb
-export const TouchSettings: Component<{}, { floating: boolean }> = function () {
-	this.css = `
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-inline: 0.25rem;
-
-		.row {
-			display: flex;
-			gap: 0.5rem;
-			align-items: center;
-		}
-		.hint {
-			opacity: 0.7;
-			font-size: 0.9em;
-		}
-	`;
-	this.floating = store.joystickMode === "floating";
-	return (
-		<div>
-			<Switch
-				title="Joystick follows my thumb (off: joystick stays where I put it)"
-				bind:on={use(this.floating)}
-				disabled={false}
-				on:change={(e: Event) => {
-					store.joystickMode = (e.target as HTMLInputElement).checked ? "floating" : "fixed";
-				}}
-			/>
-			{$if(
-				use(store.joystickMode, (m) => m === "fixed"),
-				<div class="row">
-					<Button
-						type="normal"
-						icon="none"
-						disabled={false}
-						on:click={() => {
-							store.controls = "mobile";
-							store.touchEdit = true;
-						}}
-					>
-						Move joystick
-					</Button>
-					<span class="hint">Then close the menu, drag the joystick in the game, and tap "Done moving".</span>
-				</div>
-			)}
 		</div>
 	);
 };

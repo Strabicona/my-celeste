@@ -9,7 +9,7 @@ import { cloudState } from "./cloud";
 import { importSaveFiles, nudgeSaveSync, syncNow } from "./savesync";
 import { gameEvents } from "./game/dotnet";
 import { setupRelaunch } from "./relaunch";
-import { Settings, TouchSettings } from "./settings";
+import { Settings } from "./settings";
 
 import iconPlayArrow from "@ktibow/iconset-material-symbols/play-arrow";
 import iconFullscreen from "@ktibow/iconset-material-symbols/fullscreen";
@@ -20,10 +20,7 @@ import iconUpload from "@ktibow/iconset-material-symbols/upload";
 import iconCloudOff from "@ktibow/iconset-material-symbols/cloud-off";
 import iconMenu from "@ktibow/iconset-material-symbols/menu";
 import iconClose from "@ktibow/iconset-material-symbols/close";
-import iconPhone from "@ktibow/iconset-material-symbols/smartphone";
-import iconComputer from "@ktibow/iconset-material-symbols/computer";
 import { linkFor, profile, PROFILES, ProfileId } from "./profile";
-import { mountTouchControls } from "./touch";
 import { startAwayWatch } from "./away";
 import "./keys";
 import "./keepawake";
@@ -333,9 +330,7 @@ const TopBar: Component<
 	const fullscreen = async () => {
 		close();
 		try {
-			// Mobile mode: the whole game box, so the on-screen controls come along
-			const el = store.controls === "mobile" ? this.canvas.parentElement! : this.canvas;
-			await el.requestFullscreen({ navigationUI: "hide" });
+			await this.canvas.requestFullscreen({ navigationUI: "hide" });
 		} catch {}
 	};
 
@@ -343,18 +338,6 @@ const TopBar: Component<
 	let swipeX: number | null = null;
 
 	const pick = (on: boolean) => (on ? "primary" : "normal") as "primary" | "normal";
-	const controlsRow = (mobile: boolean) => (
-		<div class="row">
-			<Button on:click={() => (store.controls = "pc")} icon="left" type={pick(!mobile)} disabled={false} title="Keyboard / controller">
-				<Icon icon={iconComputer} />
-				<span>PC</span>
-			</Button>
-			<Button on:click={() => (store.controls = "mobile")} icon="left" type={pick(mobile)} disabled={false} title="On-screen joystick and buttons">
-				<Icon icon={iconPhone} />
-				<span>Mobile</span>
-			</Button>
-		</div>
-	);
 
 	return (
 		<div>
@@ -487,12 +470,6 @@ const TopBar: Component<
 				</section>
 
 				<section>
-					<h3>Controls</h3>
-					{$if(use(store.controls, (c) => c === "mobile"), controlsRow(true), controlsRow(false))}
-					<TouchSettings />
-				</section>
-
-				<section>
 					<h3>Save</h3>
 					<div class="status">{use(this.driveLabel)}</div>
 					<div class="row">
@@ -618,7 +595,6 @@ export const Main: Component<
 	this.achievementsOpen = false;
 
 	this.mount = () => {
-		mountTouchControls(game as HTMLElement, this.canvas);
 		startAwayWatch(this.canvas);
 		useChange([store.logs], (x) => {
 			this.logcontainer.style.height = `${x}px`;

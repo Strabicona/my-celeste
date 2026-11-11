@@ -384,6 +384,48 @@ public static partial class CelesteLoader
         try { if (fr.Mode != null) F(fr.Mode, "TimePlayed").SetValue(fr.Mode, fr.ModeTime); } catch { }
     }
 
+    // Room auto-save (11 Nov 2026, asked): Celeste only writes its file on Save
+    // & Quit or at the end of a chapter, so a tab that closes mid-level lost
+    // everything since. Now the game writes its file, with the level's current
+    // place (the room you are in), the same way its own saves do:
+    //   - when you enter a new room, at most once a minute (each save is a
+    //     short bit of work for the game, so not on every room), and
+    //   - once when the game is paused by auto-pause (nothing to see then).
+    // "Continue" on the file then starts you at the start of that room.
+    static readonly System.Diagnostics.Stopwatch sinceAutoSave = System.Diagnostics.Stopwatch.StartNew();
+    static MethodInfo saveHandler;
+    static bool AutoSave(object level, string why)
+    {
+        try
+        {
+            if (saveHandler == null)
+                saveHandler = celeste.GetType("Celeste.UserIO")?.GetMethod("SaveHandler", BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(bool), typeof(bool) }, null);
+            var saving = celeste.GetType("Celeste.UserIO")?.GetProperty("Saving", BindingFlags.Static | BindingFlags.Public);
+            if (saveHandler == null || (saving != null && (bool)saving.GetValue(null))) return false;
+            var save = celeste.GetType("Celeste.SaveData")?.GetField("Instance", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
+            if (save == null) return false;
+            // the save's current session must be this level's, or the file
+            // would point at an old place
+            object levelSession = F(level, "Session")?.GetValue(level);
+            var cur = save.GetType().GetProperty("CurrentSession", BindingFlags.Instance | BindingFlags.Public);
+            object saveSession = cur != null ? cur.GetValue(save) : F(save, "CurrentSession_Safe")?.GetValue(save);
+            if (levelSession == null || !ReferenceEquals(levelSession, saveSession))
+            {
+                Console.WriteLine("[autosave] skipped: this level is not the file's current run");
+                return false;
+            }
+            saveHandler.Invoke(null, new object[] { true, false });
+            sinceAutoSave.Restart();
+            Console.WriteLine("[autosave] saved (" + why + ")");
+            return true;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[autosave] failed: " + e.Message);
+            return false;
+        }
+    }
+
     [JSExport]
     internal static Task WatchScene([JSMarshalAs<JSType.Function<JSType.String, JSType.Boolean>>] Func<string, bool> callback)
     {
@@ -393,6 +435,10 @@ public static partial class CelesteLoader
             PropertyInfo savingProp = null;
             Frozen frozen = null;
             object frozenLevel = null;
+            object roomLevel = null;
+            string lastRoom = null;
+            bool roomUnsaved = false;
+            bool pauseSaved = false;
             while (true)
             {
                 int state = 0;
@@ -405,6 +451,33 @@ public static partial class CelesteLoader
                     {
                         var paused = scene.GetType().GetField("Paused", BindingFlags.Instance | BindingFlags.Public);
                         state = paused != null && (bool)paused.GetValue(scene) ? 2 : 1;
+                        try
+                        {
+                            var session = F(scene, "Session")?.GetValue(scene);
+                            var room = session != null ? F(session, "Level")?.GetValue(session) as string : null;
+                            if (scene != roomLevel)
+                            {
+                                roomLevel = scene;
+                                lastRoom = room;
+                                roomUnsaved = false;
+                            }
+                            else if (room != null && room != lastRoom)
+                            {
+                                lastRoom = room;
+                                roomUnsaved = true;
+                            }
+                            if (roomUnsaved && state == 1 && sinceAutoSave.Elapsed.TotalSeconds >= 60)
+                            {
+                                if (AutoSave(scene, "room " + room)) roomUnsaved = false;
+                            }
+                            if (away && state == 2 && !pauseSaved)
+                            {
+                                pauseSaved = true;
+                                if (AutoSave(scene, "auto-pause")) roomUnsaved = false;
+                            }
+                            if (!away) pauseSaved = false;
+                        }
+                        catch { }
                     }
                     if (away && state == 2)
                     {

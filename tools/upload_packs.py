@@ -32,8 +32,9 @@ UA = "my-celeste-pack-uploader"
 
 # which mods each link gets (dependencies are added automatically)
 PACKS = {
-    "mods-sj": ["StrawberryJam2021", "foxhair (Bangs Only)"],
-    "mods-ds": ["Monika's D-Sides", "foxhair (Bangs Only)"],
+    # SpeedrunTool: exact save states while playing (asked 11 Nov 2026)
+    "mods-sj": ["StrawberryJam2021", "foxhair (Bangs Only)", "SpeedrunTool"],
+    "mods-ds": ["Monika's D-Sides", "foxhair (Bangs Only)", "SpeedrunTool"],
 }
 NOT_MODS = {"Everest", "EverestCore", "Celeste"}
 

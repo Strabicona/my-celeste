@@ -67,6 +67,7 @@ function pollPads() {
 }
 
 let lastPause = 0;
+let pauseTries = 0;
 function autoPause(canvas: HTMLCanvasElement, why: string) {
 	if (!gameState.playing) return;
 	// away: the game holds its clock while paused (file time counts in the
@@ -75,8 +76,14 @@ function autoPause(canvas: HTMLCanvasElement, why: string) {
 		isAway = true;
 		setAway(true);
 	}
-	if (sceneInfo.state !== 1) return;
+	if (sceneInfo.state !== 1) {
+		pauseTries = 0;
+		return;
+	}
 	if (Date.now() - lastPause < 3000) return; // give the menu time to open
+	// a game that did not react to 3 presses (stuck or crashed): stop pressing
+	if (pauseTries >= 3) return;
+	pauseTries++;
 	lastPause = Date.now();
 	// read the Pause key from the save again, in case it was changed in the game
 	loadBindings().finally(() => pressPause(canvas));

@@ -63,7 +63,29 @@ async function startGame() {
 		location.reload();
 		return;
 	}
+	await blockBrokenMods();
 	play();
+}
+
+// Mods that are in the packs but must not run here. Everest skips any mod
+// listed in Mods/blacklist.txt. Speedrun Tool (added 11 Nov 2026 for save
+// states) crashes the whole game in the browser when it saves a state (F7),
+// so it stays off until that is fixed.
+const BLOCKED_MODS = ["SpeedrunTool.zip"];
+async function blockBrokenMods() {
+	try {
+		const root = await navigator.storage.getDirectory();
+		const celeste = await root.getDirectoryHandle("Celeste");
+		const mods = await celeste.getDirectoryHandle("Mods", { create: false });
+		const f = await mods.getFileHandle("blacklist.txt", { create: true });
+		const w = await f.createWritable();
+		await w.write(
+			"# written by my-celeste: these mods crash the game in the browser\n" + BLOCKED_MODS.join("\n") + "\n"
+		);
+		await w.close();
+	} catch {
+		// no Mods folder (Plain Celeste): nothing to block
+	}
 }
 
 // Mod switch with the game open: save, stop, reopen the other mod and start it.
@@ -452,7 +474,7 @@ const TopBar: Component<
 							{PROFILES.ds.label}
 						</Button>
 					</div>
-					<div class="status">No sound (lighter, for phones; same saves)</div>
+					<div class="status">No sound (lighter; same saves)</div>
 					<div class="row">
 						<Button on:click={() => switchMods("sjq")} icon="none" type={pick(profile?.id === "sjq")} disabled={false} title="Strawberry Jam without music and sound">
 							{PROFILES.sjq.label}

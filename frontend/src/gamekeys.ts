@@ -86,10 +86,10 @@ export async function loadBindings() {
 			if (key && keyInfo(key)) next[action] = key;
 		}
 	} catch (e) {
-		console.warn("[touch] could not read your controls, using Celeste's defaults", e);
+		console.warn("[keys] could not read your controls, using Celeste's defaults", e);
 	}
 	bindings = next;
-	console.log("[touch] buttons press:", bindings);
+	console.log("[keys] your controls:", bindings);
 }
 
 

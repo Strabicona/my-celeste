@@ -6,7 +6,9 @@
 //   ?mods=sj-nosound      Strawberry Jam, no sound
 //   ?mods=dsides-nosound  D-Sides, no sound
 //   ?mods=plain           plain Celeste: no Everest, no mods, the original save
-export type ProfileId = "sj" | "ds" | "sjq" | "dsq" | "plain";
+//   ?mods=test            hidden test link: D-Sides without sound, with its own
+//                         throwaway saves ("test~"), never Afonso's (12 Nov 2026)
+export type ProfileId = "sj" | "ds" | "sjq" | "dsq" | "plain" | "test";
 
 export type Profile = {
 	id: ProfileId;
@@ -24,6 +26,7 @@ export const PROFILES: Record<ProfileId, Profile> = {
 	dsq: { id: "dsq", label: "D-Sides", pack: "mods-ds", noSound: true, savePrefix: "ds~" },
 	// your original save (from before the mods), without Everest
 	plain: { id: "plain", label: "Plain Celeste", pack: null, noSound: false, savePrefix: "" },
+	test: { id: "test", label: "Test (throwaway saves)", pack: "mods-ds", noSound: true, savePrefix: "test~" },
 };
 
 export const LINKS: Record<ProfileId, string> = {
@@ -32,6 +35,7 @@ export const LINKS: Record<ProfileId, string> = {
 	sjq: "sj-nosound",
 	dsq: "dsides-nosound",
 	plain: "plain",
+	test: "test",
 };
 
 function pick(): Profile | null {
@@ -41,6 +45,7 @@ function pick(): Profile | null {
 	if (v === "sj-nosound" || v === "sjq") return PROFILES.sjq;
 	if (v === "dsides-nosound" || v === "dsq") return PROFILES.dsq;
 	if (v === "plain" || v === "none" || v === "vanilla") return PROFILES.plain;
+	if (v === "test") return PROFILES.test;
 	return null;
 }
 

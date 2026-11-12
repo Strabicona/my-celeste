@@ -1,21 +1,20 @@
 // Auto-pause and the health report (9 Nov 2026).
 //
 // Auto-pause: the game runs in a background thread, so it kept running (and
-// counting time) with the tab hidden or nobody playing. Now, while you are in a
-// level and it is running, it opens the pause menu when:
+// counting time) with the tab hidden or nobody playing. Now the game is told
+// you are away when:
 //   - the tab goes to the background, or
 //   - no game key was pressed for 30 seconds (see GAME_KEYS).
-// It only presses Pause when the game says it is in a running level, so it
-// never unpauses you. While away and paused, the game also holds its clock
-// (file time, chapter time played, run time), until you press something again.
+// The game then pauses the level itself, saves (the page sends that save to
+// the cloud right away), and holds its clock (file time, chapter time played,
+// run time) until a game key is pressed again.
 //
 // Health report: once a minute while playing, frame rate, memory and the
 // game's memory clean-ups go to the cloud (meta key "health"), to find why it
 // gets choppy after a while.
 import { frameInfo, gameState, sceneInfo, setAway, wasmMemoryMB } from "./game/dotnet";
-import { loadBindings, pressPause } from "./gamekeys";
 import { report } from "./report";
-import { syncStats } from "./savesync";
+import { nudgeSaveSync, syncStats } from "./savesync";
 
 const IDLE_MS = 30_000;
 
@@ -25,8 +24,7 @@ let isAway = false;
 // Only these keys count as playing (asked 10 Nov 2026): W A S D, - and . (and
 // the key that types "-" on a Portuguese keyboard), space, both shifts, tab,
 // esc. Mouse, wheel, fullscreen and switching to the tab do not count, and a
-// key only counts while the tab has focus. Presses made by the page itself
-// (auto-pause pressing Pause) never count. A controller counts too.
+// key only counts while the tab has focus. A controller counts too.
 const GAME_KEYS = new Set([
 	"KeyW", "KeyA", "KeyS", "KeyD",
 	"Minus", "Slash", "Period", "NumpadSubtract", "NumpadDecimal",
@@ -43,7 +41,6 @@ const played = () => {
 addEventListener(
 	"keydown",
 	(e: KeyboardEvent) => {
-		if ((e as any).myCelesteAuto) return;
 		if (!GAME_KEYS.has(e.code)) return;
 		played();
 	},
@@ -66,32 +63,20 @@ function pollPads() {
 	} catch {}
 }
 
-let lastPause = 0;
-let pauseTries = 0;
-function autoPause(canvas: HTMLCanvasElement, why: string) {
-	if (!gameState.playing) return;
-	// away: the game holds its clock while paused (file time counts in the
-	// pause menu otherwise)
-	if (!isAway) {
-		isAway = true;
-		setAway(true);
-	}
-	if (sceneInfo.state !== 1) {
-		pauseTries = 0;
-		return;
-	}
-	if (Date.now() - lastPause < 3000) return; // give the menu time to open
-	// a game that did not react to 3 presses (stuck or crashed): stop pressing
-	if (pauseTries >= 3) return;
-	pauseTries++;
-	lastPause = Date.now();
-	// read the Pause key from the save again, in case it was changed in the game
-	loadBindings().finally(() => pressPause(canvas));
-	console.log(`[away] paused the game (${why})`);
+// Idle: tell the game once; the game itself pauses the level, holds its clock
+// and saves (loader/Celeste.cs WatchScene), and the save goes to the cloud as
+// soon as it is written (savesync.ts nudgeSaveSync). No key is pressed: a key
+// press does not get through in a hidden or slowed tab (12 Nov 2026).
+function autoPause(_canvas: HTMLCanvasElement, why: string) {
+	if (!gameState.playing || isAway) return;
+	isAway = true;
+	setAway(true);
+	console.log(`[away] idle (${why}): the game pauses and saves`);
+	// send the save even if the "finished writing" signal is missed
+	setTimeout(nudgeSaveSync, 2500);
 }
 
 export function startAwayWatch(canvas: HTMLCanvasElement) {
-	loadBindings();
 	document.addEventListener("visibilitychange", () => {
 		// coming back to the tab does not unfreeze: a game key does
 		if (document.hidden) autoPause(canvas, "tab in the background");

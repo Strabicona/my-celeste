@@ -270,13 +270,14 @@ export function startSaveSync() {
 	window.addEventListener("pagehide", () => syncOnce(true, true));
 }
 
-// the game just finished writing: look a few times while the files settle
-// (a file is sent once two looks in a row see it the same)
+// the game just finished writing its save: send it now (the game says the
+// files are complete, so no need to wait for two identical looks). Tried a
+// few times in case a look is already running or the network hiccups.
 let nudges: number[] = [];
 export function nudgeSaveSync() {
 	if (!started) return;
 	for (const t of nudges) clearTimeout(t);
-	nudges = [500, 2000, 5000].map((ms) => window.setTimeout(() => syncOnce(false), ms));
+	nudges = [300, 3000, 10000].map((ms) => window.setTimeout(() => syncOnce(true), ms));
 }
 
 export async function syncNow() {

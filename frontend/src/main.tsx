@@ -105,6 +105,25 @@ switching.style.cssText =
 	"position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);color:#fff;font:600 1.3rem system-ui,sans-serif;";
 document.body.append(switching);
 
+// Red warning while saves are not reaching the cloud (12 Nov 2026): a save
+// that only lives on this device is lost if the device is not used again.
+const saveWarning = document.createElement("div");
+saveWarning.style.cssText =
+	"position:fixed;top:0.5rem;left:50%;transform:translateX(-50%);z-index:90;display:none;max-width:90vw;padding:0.5rem 0.9rem;border-radius:0.5rem;background:#c62828;color:#fff;font:600 0.95rem system-ui,sans-serif;text-align:center;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,0.5);";
+document.body.append(saveWarning);
+useChange([cloudState.error, cloudState.lastSaved], () => {
+	if (!cloudState.error) {
+		saveWarning.style.display = "none";
+		return;
+	}
+	const last =
+		cloudState.lastSaved && cloudState.lastSaved !== "loaded"
+			? `Last sent at ${cloudState.lastSaved}.`
+			: "Nothing sent yet from this tab.";
+	saveWarning.textContent = `Saves are not reaching the cloud. ${last} Retrying every 30 s. (${cloudState.error})`;
+	saveWarning.style.display = "block";
+});
+
 // The phone closed the tab while the game was running (no clean exit), e.g. to
 // get memory back: report it on the next load, so it shows in the error log.
 {

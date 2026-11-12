@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices.JavaScript;
@@ -384,14 +385,13 @@ public static partial class CelesteLoader
         try { if (fr.Mode != null) F(fr.Mode, "TimePlayed").SetValue(fr.Mode, fr.ModeTime); } catch { }
     }
 
-    // Room auto-save (11 Nov 2026, asked): Celeste only writes its file on Save
-    // & Quit or at the end of a chapter, so a tab that closes mid-level lost
-    // everything since. Now the game writes its file, with the level's current
-    // place (the room you are in), the same way its own saves do:
-    //   - when you enter a new room, at most once a minute (each save is a
-    //     short bit of work for the game, so not on every room), and
-    //   - once when the game is paused by auto-pause (nothing to see then).
+    // Idle auto-save (11-12 Nov 2026, asked): Celeste only writes its file on
+    // Save & Quit or at the end of a chapter, so a tab that closes mid-level
+    // lost everything since. Now, each time you go idle (30 s without a game
+    // key, or the tab hidden), the game writes its file with the level's
+    // current place (the room you are in), the same way its own saves do.
     // "Continue" on the file then starts you at the start of that room.
+    // (The save on every new room was dropped on 12 Nov: idle only.)
     static readonly System.Diagnostics.Stopwatch sinceAutoSave = System.Diagnostics.Stopwatch.StartNew();
     static MethodInfo saveHandler;
     static bool AutoSave(object level, string why)
@@ -426,6 +426,37 @@ public static partial class CelesteLoader
         }
     }
 
+    // Opens the pause menu on the game's thread (at the end of the next frame)
+    static void AskPause(object level)
+    {
+        try
+        {
+            var t = level.GetType();
+            var canPause = t.GetProperty("CanPause", BindingFlags.Instance | BindingFlags.Public);
+            if (canPause != null && !(bool)canPause.GetValue(level)) return;
+            MethodInfo pause = null;
+            foreach (var m in t.GetMethods(BindingFlags.Instance | BindingFlags.Public))
+                if (m.Name == "Pause" && m.GetParameters().All(p => p.IsOptional) && (pause == null || m.GetParameters().Length > pause.GetParameters().Length))
+                    pause = m;
+            var endOfFrame = t.GetEvent("OnEndOfFrame", BindingFlags.Instance | BindingFlags.Public);
+            if (pause == null || endOfFrame == null) { Console.WriteLine("[away] cannot pause: no Pause/OnEndOfFrame"); return; }
+            var args = pause.GetParameters().Select(p => p.DefaultValue).ToArray();
+            Action act = () =>
+            {
+                try
+                {
+                    var paused = F(level, "Paused");
+                    if (paused != null && (bool)paused.GetValue(level)) return;
+                    pause.Invoke(level, args);
+                    Console.WriteLine("[away] paused the level");
+                }
+                catch (Exception e) { Console.WriteLine("[away] pause failed: " + (e.InnerException ?? e).Message); }
+            };
+            endOfFrame.AddEventHandler(level, act);
+        }
+        catch (Exception e) { Console.WriteLine("[away] cannot pause: " + e.Message); }
+    }
+
     [JSExport]
     internal static Task WatchScene([JSMarshalAs<JSType.Function<JSType.String, JSType.Boolean>>] Func<string, bool> callback)
     {
@@ -435,10 +466,9 @@ public static partial class CelesteLoader
             PropertyInfo savingProp = null;
             Frozen frozen = null;
             object frozenLevel = null;
-            object roomLevel = null;
-            string lastRoom = null;
-            bool roomUnsaved = false;
-            bool pauseSaved = false;
+            bool idleSaved = false;
+            int pauseAsks = 0;
+            var sinceAsk = System.Diagnostics.Stopwatch.StartNew();
             while (true)
             {
                 int state = 0;
@@ -451,31 +481,30 @@ public static partial class CelesteLoader
                     {
                         var paused = scene.GetType().GetField("Paused", BindingFlags.Instance | BindingFlags.Public);
                         state = paused != null && (bool)paused.GetValue(scene) ? 2 : 1;
+                        // Idle (asked 12 Nov 2026): pause the level here, on the
+                        // game's own thread, instead of pressing the Pause key
+                        // (a key press does not get through in a hidden or
+                        // slowed tab), then save once; the page sends the save
+                        // to the cloud as soon as the game has written it.
                         try
                         {
-                            var session = F(scene, "Session")?.GetValue(scene);
-                            var room = session != null ? F(session, "Level")?.GetValue(session) as string : null;
-                            if (scene != roomLevel)
+                            if (away && !idleSaved)
                             {
-                                roomLevel = scene;
-                                lastRoom = room;
-                                roomUnsaved = false;
+                                if (state == 1 && pauseAsks < 3 && (pauseAsks == 0 || sinceAsk.Elapsed.TotalSeconds >= 1))
+                                {
+                                    pauseAsks++;
+                                    sinceAsk.Restart();
+                                    AskPause(scene);
+                                }
+                                // paused, or could not pause (cutscene): save anyway
+                                if (state == 2 || (pauseAsks >= 3 && sinceAsk.Elapsed.TotalSeconds >= 1))
+                                    idleSaved = AutoSave(scene, state == 2 ? "idle, paused" : "idle, could not pause");
                             }
-                            else if (room != null && room != lastRoom)
+                            if (!away)
                             {
-                                lastRoom = room;
-                                roomUnsaved = true;
+                                idleSaved = false;
+                                pauseAsks = 0;
                             }
-                            if (roomUnsaved && state == 1 && sinceAutoSave.Elapsed.TotalSeconds >= 60)
-                            {
-                                if (AutoSave(scene, "room " + room)) roomUnsaved = false;
-                            }
-                            if (away && state == 2 && !pauseSaved)
-                            {
-                                pauseSaved = true;
-                                if (AutoSave(scene, "auto-pause")) roomUnsaved = false;
-                            }
-                            if (!away) pauseSaved = false;
                         }
                         catch { }
                     }

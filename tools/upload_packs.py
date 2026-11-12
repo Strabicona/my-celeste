@@ -33,8 +33,9 @@ UA = "my-celeste-pack-uploader"
 # which mods each link gets (dependencies are added automatically)
 PACKS = {
     # SpeedrunTool: exact save states while playing (asked 11 Nov 2026)
-    "mods-sj": ["StrawberryJam2021", "foxhair (Bangs Only)", "SpeedrunTool"],
-    "mods-ds": ["Monika's D-Sides", "foxhair (Bangs Only)", "SpeedrunTool"],
+    # Cateline (cat-ear bangs) replaced foxhair (Bangs Only) on 12 Nov 2026 (asked)
+    "mods-sj": ["StrawberryJam2021", "Cateline", "SpeedrunTool"],
+    "mods-ds": ["Monika's D-Sides", "Cateline", "SpeedrunTool"],
 }
 NOT_MODS = {"Everest", "EverestCore", "Celeste"}
 

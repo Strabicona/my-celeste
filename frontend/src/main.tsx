@@ -85,6 +85,35 @@ async function blockBrokenMods() {
 		await w.close();
 	} catch {
 		// no Mods folder (Plain Celeste): nothing to block
+		return;
+	}
+	await noModUpdates();
+}
+
+// Everest's "Auto Update Mods on Startup" tries to download mod updates from
+// GameBanana, which the browser blocks; while it waits the game froze for over
+// a minute (seen 13 Nov 2026). The packs are kept up to date online instead,
+// so the setting is turned off on every link before the game starts.
+async function noModUpdates() {
+	const NAME = "modsettings-Everest.celeste";
+	const LINE = /^AutoUpdateModsOnStartup:.*$/m;
+	try {
+		const root = await navigator.storage.getDirectory();
+		const saves = await (await root.getDirectoryHandle("Celeste")).getDirectoryHandle("Saves", { create: true });
+		let text = "";
+		try {
+			text = await (await (await saves.getFileHandle(NAME)).getFile()).text();
+		} catch {}
+		let next: string;
+		if (LINE.test(text)) next = text.replace(LINE, "AutoUpdateModsOnStartup: false");
+		else next = text + (text && !text.endsWith("\n") ? "\n" : "") + "AutoUpdateModsOnStartup: false\n";
+		if (next === text) return;
+		const w = await (await saves.getFileHandle(NAME, { create: true })).createWritable();
+		await w.write(next);
+		await w.close();
+		console.log("[mods] turned off Everest's mod auto-update");
+	} catch (e) {
+		console.warn("[mods] could not turn off Everest's mod auto-update:", e);
 	}
 }
 

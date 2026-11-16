@@ -172,17 +172,18 @@ public static partial class CelesteLoader
         return GroupOf(sid);
     }
 
-    // keep `target` (and the map about to be played) complete, drop the rest
+    // Keep only the map about to be played complete (plus lobbies, gyms and
+    // vanilla maps, which are never touched); drop the rooms of every other mod
+    // map. Asked 16 Nov 2026: load a map only when entering it.
     static int SlimEnsure(string target, object playing)
     {
-        if (target == null && slimGroup != null && playing != null) target = slimGroup; // vanilla or gym: change nothing
         int changed = 0;
         var areas = (IList)celeste.GetType("Celeste.AreaData").GetField("Areas", BindingFlags.Static | BindingFlags.Public).GetValue(null);
         foreach (var ad in areas)
         {
             if (ad == null) continue;
-            var group = GroupOf(SidOf(ad));
-            if (group == null) continue;
+            var sid = SidOf(ad);
+            if (GroupOf(sid) == null) continue;
             var modes = F(ad, "Mode")?.GetValue(ad) as Array;
             if (modes == null) continue;
             foreach (var mp in modes)
@@ -190,9 +191,16 @@ public static partial class CelesteLoader
                 if (mp == null) continue;
                 var map = F(mp, "MapData")?.GetValue(mp);
                 if (map == null) continue;
-                bool keep = group == target || ReferenceEquals(map, playing);
+                bool keep = ReferenceEquals(map, playing);
                 bool stripped = slimStripped.Contains(map);
-                if (keep && stripped) { Reload(map); changed++; }
+                if (keep && stripped)
+                {
+                    var clock = Stopwatch.StartNew();
+                    Console.WriteLine($"[slim] loading {sid}...");
+                    Reload(map);
+                    Console.WriteLine($"[slim] loaded {sid} in {clock.ElapsedMilliseconds} ms");
+                    changed++;
+                }
                 else if (!keep && !stripped) { Strip(map); changed++; }
             }
         }

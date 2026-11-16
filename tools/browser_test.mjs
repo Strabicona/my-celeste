@@ -176,8 +176,12 @@ for (run of RUNS) {
 		r.lobby = await stay("lobby", STAY_S);
 		await enter(MAP_A);
 		r.mapA = await stay("intermediate-map", STAY_S);
+		await enter(LOBBY);
+		r.lobbyAgain = await stay("lobby-again", 30);
 		await enter(MAP_B);
 		r.mapB = await stay("expert-map", STAY_S);
+		await enter(MAP_A);
+		r.mapAAgain = await stay("intermediate-map-again", 30);
 		r.summaryAtEnd = await page.evaluate(async () => await globalThis.__myCeleste.summary());
 		if (process.env.DROP_ALL === "1") {
 			r.dropAll = await page.evaluate(async () => await globalThis.__myCeleste.dropAllMaps());

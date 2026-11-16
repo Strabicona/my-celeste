@@ -618,15 +618,16 @@ function monitorMem(): () => void {
 }
 
 // Per-lobby map loading and the one-time restart after a first start
-// (loader/SlimMaps.cs). The restart is on for every modded link (16 Nov 2026:
-// 1393 MB -> 551 MB measured); per-lobby loading only on the hidden test links
-// (it crashed entering a lobby there), where ?slim=0 turns it off.
+// (loader/SlimMaps.cs), on every modded link. Measured 16 Nov 2026 on the
+// Strawberry Jam test link: first start 1393 MB, after the restart 551 MB,
+// with per-map loading 330-350 MB in lobbies and maps. ?slim=0 turns per-map
+// loading off.
 const RESTARTED = "my-celeste-restarted";
 function startSlimMaps() {
 	const q = new URLSearchParams(location.search);
 	const testing = /^test/.test(q.get("mods") || "");
 	if (!exports.CelesteLoader.StartSlimMaps) return;
-	const on = testing && q.get("slim") !== "0";
+	const on = q.get("slim") !== "0";
 	// never restart twice within 15 minutes (a cache that will not fill)
 	let last = 0;
 	try {

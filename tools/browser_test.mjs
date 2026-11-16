@@ -132,7 +132,7 @@ async function stay(label, seconds) {
 
 async function enter(sid) {
 	log("entering", sid);
-	const r = await page.evaluate((s) => globalThis.__myCeleste.load(s), sid);
+	const r = await page.evaluate(async (s) => await globalThis.__myCeleste.load(s), sid);
 	if (r !== "ok") throw new Error("load: " + r);
 	await sleep(5000);
 	await waitFor(sid + " playing", (s) => s.scene.state === 1 || s.scene.state === 2, 300);
@@ -147,11 +147,17 @@ for (run of RUNS) {
 	await page.goto(url, { waitUntil: "domcontentloaded" });
 	try {
 		// startup: download (first run), then the engine, then the title screen
-		await waitFor("title screen", (s) => s.scene.managedMB > 0 && s.frames.fps > 0, 2400);
-		await sleep(run === "on" ? 30000 : 20000);
+		const seen = consoleLines.length;
+		await waitFor("title screen", (s) => s.scene.managedMB > 0 && s.frames.fps > 0 && consoleLines.slice(seen).some((l) => l.includes("LEVELS LOAD")), 3600);
+		// per-lobby loading drops the rooms once the title screen is up
+		if (run === "on") {
+			const t0 = Date.now();
+			while (!consoleLines.slice(seen).some((l) => l.startsWith("[slim] on:") || l.startsWith("[slim] off") || l.startsWith("[slim] failed")) && Date.now() - t0 < 300000) await sleep(2000);
+		}
+		await sleep(20000);
 		const title = await state();
 		const r = { titleMemoryMB: title.scene.managedMB };
-		r.summaryAtTitle = await page.evaluate(() => globalThis.__myCeleste.summary());
+		r.summaryAtTitle = await page.evaluate(async () => await globalThis.__myCeleste.summary());
 		await page.screenshot({ path: `${OUT}/${run}-title.png` });
 		await enter(LOBBY);
 		r.lobby = await stay("lobby", STAY_S);
@@ -159,7 +165,7 @@ for (run of RUNS) {
 		r.mapA = await stay("intermediate-map", STAY_S);
 		await enter(MAP_B);
 		r.mapB = await stay("expert-map", STAY_S);
-		r.summaryAtEnd = await page.evaluate(() => globalThis.__myCeleste.summary());
+		r.summaryAtEnd = await page.evaluate(async () => await globalThis.__myCeleste.summary());
 		results[run] = r;
 	} catch (e) {
 		log("run", run, "failed:", e.message);

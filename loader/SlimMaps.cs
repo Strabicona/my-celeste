@@ -211,7 +211,9 @@ public static partial class CelesteLoader
     // Test links only (the page checks): start a level by its map name, with a
     // throwaway file if none is open. Used by the automatic browser test.
     [JSExport]
-    internal static string TestLoad(string sid)
+    internal static Task<string> TestLoad(string sid) => Task.FromResult(TestLoadNow(sid));
+
+    static string TestLoadNow(string sid)
     {
         try
         {
@@ -251,7 +253,9 @@ public static partial class CelesteLoader
     // Test links only: what every Strawberry Jam / D-Sides map's summary says,
     // to check that dropping rooms leaves the counts alone.
     [JSExport]
-    internal static string TestSummary()
+    internal static Task<string> TestSummary() => Task.FromResult(TestSummaryNow());
+
+    static string TestSummaryNow()
     {
         var sb = new System.Text.StringBuilder();
         try

@@ -159,6 +159,15 @@ for (run of RUNS) {
 		const r = { titleMemoryMB: title.scene.managedMB };
 		r.summaryAtTitle = await page.evaluate(async () => await globalThis.__myCeleste.summary());
 		await page.screenshot({ path: `${OUT}/${run}-title.png` });
+		if (process.env.RELINKER === "1") {
+			r.relinkerList = await page.evaluate(async () => await globalThis.__myCeleste.relinker(false));
+			log("relinker caches:\n" + r.relinkerList);
+			r.relinkerClear = await page.evaluate(async () => await globalThis.__myCeleste.relinker(true));
+			log("relinker cleared:\n" + r.relinkerClear);
+			results[run] = r;
+			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
+			continue;
+		}
 		if (process.env.DROP_ALL === "title") {
 			r.dropAll = await page.evaluate(async () => await globalThis.__myCeleste.dropAllMaps());
 			log("all maps dropped at the title:", r.dropAll);

@@ -323,4 +323,47 @@ public static partial class CelesteLoader
         });
         return done.Task;
     }
+
+    // Test links only: list Everest's code-rewriter caches (Everest.Relinker's
+    // static fields) and, with clear=true, empty them and measure memory.
+    [JSExport]
+    internal static Task<string> TestRelinker(bool clear)
+    {
+        var done = new TaskCompletionSource<string>();
+        var scene = celeste.GetType("Monocle.Engine").GetProperty("Scene", BindingFlags.Static | BindingFlags.Public).GetValue(null);
+        OnGameThread(scene, () =>
+        {
+            var sb = new System.Text.StringBuilder();
+            try
+            {
+                var t = celeste.GetType("Celeste.Mod.Everest+Relinker");
+                if (t == null) { done.SetResult("no Everest.Relinker"); return; }
+                long before = GC.GetTotalMemory(true) / (1024 * 1024);
+                foreach (var f in t.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+                {
+                    object v = null;
+                    try { v = f.GetValue(null); } catch { }
+                    string what = v == null ? "null" : v.GetType().Name + (v is ICollection c ? $"[{c.Count}]" : "");
+                    sb.Append($"{f.Name}: {f.FieldType.Name} = {what}");
+                    if (clear && v != null && !f.IsLiteral && !f.IsInitOnly && !f.FieldType.IsValueType && f.FieldType != typeof(string))
+                    {
+                        try
+                        {
+                            if (v is IDictionary d) foreach (var x in d.Values) (x as IDisposable)?.Dispose();
+                            (v as IDisposable)?.Dispose();
+                            f.SetValue(null, null);
+                            sb.Append(" -> cleared");
+                        }
+                        catch (Exception e) { sb.Append(" -> " + e.Message); }
+                    }
+                    sb.Append("\n");
+                }
+                long after = GC.GetTotalMemory(true) / (1024 * 1024);
+                sb.Append($"memory {before} -> {after} MB");
+            }
+            catch (Exception e) { sb.Append("error: " + e.Message); }
+            done.SetResult(sb.ToString());
+        });
+        return done.Task;
+    }
 }

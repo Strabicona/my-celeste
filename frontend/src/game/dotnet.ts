@@ -632,6 +632,7 @@ function startSlimMaps() {
 		(globalThis as any).__myCeleste.load = (sid: string) => exports.CelesteLoader.TestLoad(sid);
 		(globalThis as any).__myCeleste.summary = () => exports.CelesteLoader.TestSummary();
 		(globalThis as any).__myCeleste.dropAllMaps = () => exports.CelesteLoader.TestDropAllMaps();
+		(globalThis as any).__myCeleste.relinker = (clear: boolean) => exports.CelesteLoader.TestRelinker(clear);
 	}
 }
 

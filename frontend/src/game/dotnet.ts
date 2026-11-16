@@ -618,14 +618,15 @@ function monitorMem(): () => void {
 }
 
 // Per-lobby map loading and the one-time restart after a first start
-// (loader/SlimMaps.cs). For now only on the hidden test links, where ?slim=0
-// turns per-lobby loading off to compare.
+// (loader/SlimMaps.cs). The restart is on for every modded link (16 Nov 2026:
+// 1393 MB -> 551 MB measured); per-lobby loading only on the hidden test links
+// (it crashed entering a lobby there), where ?slim=0 turns it off.
 const RESTARTED = "my-celeste-restarted";
 function startSlimMaps() {
 	const q = new URLSearchParams(location.search);
 	const testing = /^test/.test(q.get("mods") || "");
-	if (!exports.CelesteLoader.StartSlimMaps || !testing) return;
-	const on = q.get("slim") !== "0";
+	if (!exports.CelesteLoader.StartSlimMaps) return;
+	const on = testing && q.get("slim") !== "0";
 	// never restart twice within 15 minutes (a cache that will not fill)
 	let last = 0;
 	try {
@@ -648,6 +649,7 @@ function startSlimMaps() {
 		},
 		(e: unknown) => console.warn("[slim] could not start:", e)
 	);
+	if (!testing) return;
 	const t = (globalThis as any).__myCeleste;
 	t.load = (sid: string) => exports.CelesteLoader.TestLoad(sid);
 	t.summary = () => exports.CelesteLoader.TestSummary();

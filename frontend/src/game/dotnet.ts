@@ -241,7 +241,7 @@ async function loadRuntime(url: string) {
 		// memory clean-ups: a bigger nursery (default 4 MB) means far fewer
 		// small clean-ups, and fewer short-lived objects pushed into the big
 		// heap, where they force the full clean-ups that freeze the game
-		.withEnvironmentVariable("MONO_GC_PARAMS", "nursery-size=32m")
+		.withEnvironmentVariable("MONO_GC_PARAMS", gcParams())
 		.withRuntimeOptions([
 			// jit functions quickly and jit more functions
 			`--jiterpreter-minimum-trace-hit-count=${500}`,
@@ -496,8 +496,21 @@ export async function UploadSteamCloud() {
 
 const SEAMLESSCOUNT = 5;
 
+// Memory clean-up settings. On the hidden test links only, ?gc=... replaces
+// them, so settings can be compared without a new build.
+export const GC_DEFAULT = "nursery-size=32m";
+function gcParams(): string {
+	const q = new URLSearchParams(location.search);
+	const testing = /^test/.test(q.get("mods") || "");
+	const p = testing ? q.get("gc") : null;
+	const v = p && /^[a-z0-9=,.\-]+$/.test(p) ? p : GC_DEFAULT;
+	console.log("[gc] settings: " + v);
+	return v;
+}
+
 // the real frame counter (see WatchFrames in loader/Celeste.cs)
 export const frameInfo = { fps: -1, worstMs: 0 };
+(globalThis as any).__myCeleste = { frameInfo, sceneInfo: () => sceneInfo };
 
 function monitorFps(): () => void {
 	let stop = false;

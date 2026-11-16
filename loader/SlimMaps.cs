@@ -80,24 +80,24 @@ public static partial class CelesteLoader
         ev.AddEventHandler(scene, act);
     }
 
-    // On.Celeste.LevelLoader.ctor: before a level starts loading, load its group
+    // Everest.Events.Level.OnEnter: raised at the start of LevelEnter.Go, before
+    // the level starts loading (lobbies, maps, Continue from a file). Restarting
+    // or dying stays in the same map, which is already complete.
     static bool InstallSlimHook()
     {
         if (slimInstalled) return true;
-        var mm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "MMHOOK_Celeste");
-        var ev = mm?.GetType("On.Celeste.LevelLoader")?.GetEvent("ctor", BindingFlags.Static | BindingFlags.Public);
-        if (ev == null) { Console.WriteLine("[slim] off: no LevelLoader hook (MMHOOK_Celeste missing)"); return false; }
+        var ev = celeste.GetType("Celeste.Mod.Everest+Events+Level")?.GetEvent("OnEnter", BindingFlags.Static | BindingFlags.Public);
+        if (ev == null) { Console.WriteLine("[slim] off: no Everest Level.OnEnter event"); return false; }
         var reload = celeste.GetType("Celeste.MapData")?.GetMethod("Reload", BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
         if (reload == null) { Console.WriteLine("[slim] off: MapData.Reload missing"); return false; }
-        var hookType = ev.EventHandlerType;
-        var ps = hookType.GetMethod("Invoke").GetParameters().Select(p => Expression.Parameter(p.ParameterType, p.Name)).ToArray();
+        var handlerType = ev.EventHandlerType;
+        var ps = handlerType.GetMethod("Invoke").GetParameters().Select(p => Expression.Parameter(p.ParameterType, p.Name)).ToArray();
         var session = ps.First(p => p.Type.Name == "Session");
         var before = typeof(CelesteLoader).GetMethod(nameof(SlimBeforeLoad), BindingFlags.Static | BindingFlags.NonPublic);
-        var body = Expression.Block(
-            Expression.Call(before, Expression.Convert(session, typeof(object))),
-            Expression.Invoke(ps[0], ps.Skip(1)));
-        ev.AddEventHandler(null, Expression.Lambda(hookType, body, ps).Compile());
+        var body = Expression.Call(before, Expression.Convert(session, typeof(object)));
+        ev.AddEventHandler(null, Expression.Lambda(handlerType, body, ps).Compile());
         slimInstalled = true;
+        Console.WriteLine("[slim] watching levels being entered");
         return true;
     }
 
@@ -220,30 +220,37 @@ public static partial class CelesteLoader
             var scene = celeste.GetType("Monocle.Engine").GetProperty("Scene", BindingFlags.Static | BindingFlags.Public).GetValue(null);
             OnGameThread(scene, () =>
             {
+                string step = "start";
                 try
                 {
+                    step = "save";
                     var saveT = celeste.GetType("Celeste.SaveData");
                     if (saveT.GetField("Instance", BindingFlags.Static | BindingFlags.Public).GetValue(null) == null)
                     {
                         var data = Activator.CreateInstance(saveT);
                         saveT.GetField("Name")?.SetValue(data, "test");
-                        saveT.GetMethod("Start", BindingFlags.Static | BindingFlags.Public).Invoke(null, new[] { data, (object)0 });
+                        var start = saveT.GetMethods(BindingFlags.Static | BindingFlags.Public).First(m => m.Name == "Start" && m.GetParameters().Length == 2);
+                        start.Invoke(null, new[] { data, (object)0 });
                         saveT.GetMethod("AfterInitialize", BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null)?.Invoke(data, null);
                     }
+                    step = "area";
                     var areaData = celeste.GetType("Celeste.AreaData");
                     var ad = areaData.GetMethod("Get", BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(string) }, null).Invoke(null, new object[] { sid });
                     if (ad == null) { Console.WriteLine("[test] no map " + sid); return; }
+                    step = "key";
                     var toKey = areaData.GetMethod("ToKey", BindingFlags.Instance | BindingFlags.Public);
                     var key = toKey.Invoke(ad, toKey.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : null).ToArray());
+                    step = "session";
                     var sessionT = celeste.GetType("Celeste.Session");
                     var ctor = sessionT.GetConstructors().OrderBy(c => c.GetParameters().Length).First(c => c.GetParameters().Length >= 1 && c.GetParameters()[0].ParameterType == key.GetType());
                     var args = ctor.GetParameters().Select((p, i) => i == 0 ? key : (p.HasDefaultValue ? p.DefaultValue : null)).ToArray();
                     var session = ctor.Invoke(args);
+                    step = "go";
                     var go = celeste.GetType("Celeste.LevelEnter").GetMethod("Go", BindingFlags.Static | BindingFlags.Public);
                     go.Invoke(null, new object[] { session, false });
                     Console.WriteLine("[test] entering " + sid);
                 }
-                catch (Exception e) { Console.WriteLine("[test] load failed: " + (e.InnerException ?? e)); }
+                catch (Exception e) { Console.WriteLine("[test] load failed at " + step + ": " + (e.InnerException ?? e).ToString().Replace("\n", " | ")); }
             });
             return "ok";
         }

@@ -73,10 +73,21 @@ const state = () =>
 		return m ? { scene: m.sceneInfo(), frames: { ...m.frameInfo } } : null;
 	});
 
+// the game's own password box (cloud saves), shown once per browser
+async function unlockIfAsked() {
+	const box = await page.$("form.step input[type=password]").catch(() => null);
+	if (!box) return;
+	await box.type(PASSWORD);
+	await page.keyboard.press("Enter");
+	log("entered the game password");
+	await sleep(3000);
+}
+
 async function waitFor(what, test, timeoutS) {
 	const until = Date.now() + timeoutS * 1000;
 	let lastNote = 0;
 	while (Date.now() < until) {
+		await unlockIfAsked();
 		const s = await state().catch(() => null);
 		if (s && test(s)) return s;
 		if (Date.now() - lastNote > 60000) {

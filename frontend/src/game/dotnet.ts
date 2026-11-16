@@ -617,6 +617,23 @@ function monitorMem(): () => void {
 	return () => (stop = true);
 }
 
+// Per-lobby map loading (loader/SlimMaps.cs). For now only on the hidden test
+// links, where ?slim=0 turns it off to compare.
+function startSlimMaps() {
+	const q = new URLSearchParams(location.search);
+	const testing = /^test/.test(q.get("mods") || "");
+	const on = testing && q.get("slim") !== "0";
+	if (!exports.CelesteLoader.StartSlimMaps) return;
+	exports.CelesteLoader.StartSlimMaps(on).then(
+		(r: string) => console.log("[slim] " + r),
+		(e: unknown) => console.warn("[slim] could not start:", e)
+	);
+	if (testing) {
+		(globalThis as any).__myCeleste.load = (sid: string) => exports.CelesteLoader.TestLoad(sid);
+		(globalThis as any).__myCeleste.summary = () => exports.CelesteLoader.TestSummary();
+	}
+}
+
 export async function play() {
 	event("play-begin");
 	gameState.playing = true;
@@ -630,6 +647,7 @@ export async function play() {
 	const before = performance.now();
 
 	await exports.CelesteLoader.Init(false);
+	startSlimMaps();
 
 	// run some frames for seamless transition
 	for (let i = 0; i < SEAMLESSCOUNT; i++) {

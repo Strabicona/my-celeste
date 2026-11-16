@@ -1,0 +1,43 @@
+name: Browser test
+
+# Plays the hidden Strawberry Jam test link (throwaway saves) in a real Chrome
+# and measures memory, full clean-ups and the longest frame, with and without
+# per-lobby map loading. Started by hand; results are in the run's artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Which runs (off = all maps, on = per lobby)"
+        default: "off,on"
+      stay:
+        description: "Seconds to stay in each place"
+        default: "120"
+
+concurrency:
+  group: browser-test
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-save puppeteer-core@24
+      - name: Play the test link
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+          RUNS: ${{ inputs.runs }}
+          STAY_S: ${{ inputs.stay }}
+        run: node tools/browser_test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-test
+          path: results/

@@ -55,7 +55,7 @@ const consoleLines = [];
 page.on("console", (m) => {
 	const t = m.text();
 	consoleLines.push(t);
-	if (/^\[(slim|test|gc|mods|saves)\]|LOAD:|DISPLAYED|Exception|went wrong/.test(t)) log("console:", t.slice(0, 300));
+	if (/^\[(slim|test|gc|mods|saves|files|tabs)\]|LOAD:|DISPLAYED|Exception|went wrong|isolat|error/i.test(t)) log("console:", t.slice(0, 300));
 });
 page.on("pageerror", (e) => log("page error:", String(e).slice(0, 300)));
 
@@ -75,9 +75,15 @@ const state = () =>
 
 async function waitFor(what, test, timeoutS) {
 	const until = Date.now() + timeoutS * 1000;
+	let lastNote = 0;
 	while (Date.now() < until) {
 		const s = await state().catch(() => null);
 		if (s && test(s)) return s;
+		if (Date.now() - lastNote > 60000) {
+			lastNote = Date.now();
+			const text = await page.evaluate(() => document.body?.innerText?.slice(0, 160).replace(/\s+/g, " ")).catch((e) => "? " + e.message);
+			log("waiting for", what, "| page:", text, "| state:", JSON.stringify(s));
+		}
 		await sleep(2000);
 	}
 	throw new Error("timed out waiting for " + what);

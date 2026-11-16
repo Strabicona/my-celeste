@@ -32,44 +32,63 @@ public static partial class CelesteLoader
     static readonly string[] SlimTexts = { "Solids", "Bg", "FgTiles", "BgTiles", "ObjTiles" };
     static readonly string[] SlimLists = { "Entities", "Triggers", "FgDecals", "BgDecals" };
 
-    // the page turns it on or off before the game reaches the title screen
+    // Called once the engine has started. Waits for the title screen, then:
+    //  - if Everest had to rewrite the mods' code this time (empty cache, the
+    //    first start after a download), answers "restart": that first start
+    //    keeps ~850 MB of working data alive for the whole session, while the
+    //    next start reads the rewritten code from the cache (measured 16 Nov:
+    //    1394 MB vs 551 MB). The page then restarts the game once.
+    //  - otherwise, with `on`, drops the rooms of the maps not being played.
     [JSExport]
-    internal static Task<string> StartSlimMaps(bool on)
+    internal static Task<string> StartSlimMaps(bool on, bool restartIfRelinked)
     {
         slimOn = on;
-        if (!on) return Task.FromResult("off");
-        return Task.Run(async () =>
+        var done = new TaskCompletionSource<string>();
+        Task.Run(async () =>
         {
-            // wait for the title screen (startup finished, every map loaded)
             for (int i = 0; i < 2400; i++)
             {
                 try
                 {
                     var scene = celeste?.GetType("Monocle.Engine")?.GetProperty("Scene", BindingFlags.Static | BindingFlags.Public)?.GetValue(null);
-                    var name = scene?.GetType().FullName;
-                    if (scene != null && name != "Celeste.GameLoader")
+                    if (scene != null && scene.GetType().FullName != "Celeste.GameLoader")
                     {
                         OnGameThread(scene, () =>
                         {
                             try
                             {
-                                if (!InstallSlimHook()) { slimOn = false; return; }
+                                if (restartIfRelinked && Relinked())
+                                {
+                                    slimOn = false;
+                                    done.TrySetResult("restart: the mods' code was rewritten this start (" + GC.GetTotalMemory(false) / (1024 * 1024) + " MB)");
+                                    return;
+                                }
+                                if (!slimOn) { done.TrySetResult("off, " + GC.GetTotalMemory(false) / (1024 * 1024) + " MB"); return; }
+                                if (!InstallSlimHook()) { slimOn = false; done.TrySetResult("off: could not watch levels"); return; }
                                 var clock = Stopwatch.StartNew();
                                 var before = GC.GetTotalMemory(false) / (1024 * 1024);
                                 int n = SlimEnsure(null, null);
                                 var after = GC.GetTotalMemory(true) / (1024 * 1024);
-                                Console.WriteLine($"[slim] on: dropped rooms of {n} maps in {clock.ElapsedMilliseconds} ms, memory {before} -> {after} MB");
+                                done.TrySetResult($"on: dropped rooms of {n} maps in {clock.ElapsedMilliseconds} ms, memory {before} -> {after} MB");
                             }
-                            catch (Exception e) { slimOn = false; Console.WriteLine("[slim] failed, off: " + (e.InnerException ?? e).Message); }
+                            catch (Exception e) { slimOn = false; done.TrySetResult("failed, off: " + (e.InnerException ?? e).Message); }
                         });
-                        return "waiting for the game thread";
+                        return;
                     }
                 }
                 catch { }
                 await Task.Delay(500);
             }
-            return "title screen never came";
+            done.TrySetResult("title screen never came");
         });
+        return done.Task;
+    }
+
+    // Everest keeps this filled only when it rewrote mod code during this start
+    static bool Relinked()
+    {
+        var f = celeste.GetType("Celeste.Mod.Everest+Relinker")?.GetField("_SharedRelinkMap", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+        return f?.GetValue(null) is ICollection c && c.Count > 0;
     }
 
     // runs once at the end of the next frame, on the game's own thread

@@ -617,23 +617,42 @@ function monitorMem(): () => void {
 	return () => (stop = true);
 }
 
-// Per-lobby map loading (loader/SlimMaps.cs). For now only on the hidden test
-// links, where ?slim=0 turns it off to compare.
+// Per-lobby map loading and the one-time restart after a first start
+// (loader/SlimMaps.cs). For now only on the hidden test links, where ?slim=0
+// turns per-lobby loading off to compare.
+const RESTARTED = "my-celeste-restarted";
 function startSlimMaps() {
 	const q = new URLSearchParams(location.search);
 	const testing = /^test/.test(q.get("mods") || "");
-	const on = testing && q.get("slim") !== "0";
-	if (!exports.CelesteLoader.StartSlimMaps) return;
-	exports.CelesteLoader.StartSlimMaps(on).then(
-		(r: string) => console.log("[slim] " + r),
+	if (!exports.CelesteLoader.StartSlimMaps || !testing) return;
+	const on = q.get("slim") !== "0";
+	// never restart twice within 15 minutes (a cache that will not fill)
+	let last = 0;
+	try {
+		last = Number(sessionStorage.getItem(RESTARTED) || 0);
+	} catch {}
+	const mayRestart = Date.now() - last > 15 * 60 * 1000;
+	exports.CelesteLoader.StartSlimMaps(on, mayRestart).then(
+		async (r: string) => {
+			console.log("[slim] " + r);
+			if (!r.startsWith("restart")) return;
+			try {
+				sessionStorage.setItem(RESTARTED, String(Date.now()));
+			} catch {}
+			const { syncNow } = await import("../savesync");
+			await syncNow().catch(() => {});
+			const u = new URL(location.href);
+			u.searchParams.set("autoplay", "1");
+			console.log("[slim] restarting the game once, so it starts from the mods cache");
+			setTimeout(() => location.replace(u.toString()), 1500);
+		},
 		(e: unknown) => console.warn("[slim] could not start:", e)
 	);
-	if (testing) {
-		(globalThis as any).__myCeleste.load = (sid: string) => exports.CelesteLoader.TestLoad(sid);
-		(globalThis as any).__myCeleste.summary = () => exports.CelesteLoader.TestSummary();
-		(globalThis as any).__myCeleste.dropAllMaps = () => exports.CelesteLoader.TestDropAllMaps();
-		(globalThis as any).__myCeleste.relinker = (clear: boolean) => exports.CelesteLoader.TestRelinker(clear);
-	}
+	const t = (globalThis as any).__myCeleste;
+	t.load = (sid: string) => exports.CelesteLoader.TestLoad(sid);
+	t.summary = () => exports.CelesteLoader.TestSummary();
+	t.dropAllMaps = () => exports.CelesteLoader.TestDropAllMaps();
+	t.relinker = (clear: boolean) => exports.CelesteLoader.TestRelinker(clear);
 }
 
 export async function play() {

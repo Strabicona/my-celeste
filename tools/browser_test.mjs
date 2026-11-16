@@ -148,12 +148,10 @@ for (run of RUNS) {
 	try {
 		// startup: download (first run), then the engine, then the title screen
 		const seen = consoleLines.length;
-		await waitFor("title screen", (s) => s.scene.managedMB > 0 && s.frames.fps > 0 && consoleLines.slice(seen).some((l) => l.includes("LEVELS LOAD")), 3600);
-		// per-lobby loading drops the rooms once the title screen is up
-		if (run === "on") {
-			const t0 = Date.now();
-			while (!consoleLines.slice(seen).some((l) => l.startsWith("[slim] on:") || l.startsWith("[slim] off") || l.startsWith("[slim] failed")) && Date.now() - t0 < 300000) await sleep(2000);
-		}
+		const ready = () => consoleLines.slice(seen).some((l) => /^\[slim\] (on:|off|failed|title)/.test(l));
+		await waitFor("title screen", (s) => s.scene.managedMB > 0 && s.frames.fps > 0 && ready(), 5400);
+		const restarted = consoleLines.slice(seen).some((l) => l.startsWith("[slim] restarting"));
+		log("restarted once after the first start:", restarted);
 		await sleep(20000);
 		const title = await state();
 		const r = { titleMemoryMB: title.scene.managedMB };

@@ -238,8 +238,10 @@ public static partial class CelesteLoader
                     var ad = areaData.GetMethod("Get", BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(string) }, null).Invoke(null, new object[] { sid });
                     if (ad == null) { Console.WriteLine("[test] no map " + sid); return; }
                     step = "key";
-                    var toKey = areaData.GetMethod("ToKey", BindingFlags.Instance | BindingFlags.Public);
-                    var key = toKey.Invoke(ad, toKey.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : null).ToArray());
+                    var keyT = celeste.GetType("Celeste.AreaKey");
+                    int id = Convert.ToInt32(ad.GetType().GetProperty("ID")?.GetValue(ad) ?? F(ad, "ID").GetValue(ad));
+                    var modeT = celeste.GetType("Celeste.AreaMode");
+                    var key = Activator.CreateInstance(keyT, id, Enum.ToObject(modeT, 0));
                     step = "session";
                     var sessionT = celeste.GetType("Celeste.Session");
                     var ctor = sessionT.GetConstructors().OrderBy(c => c.GetParameters().Length).First(c => c.GetParameters().Length >= 1 && c.GetParameters()[0].ParameterType == key.GetType());
@@ -290,5 +292,35 @@ public static partial class CelesteLoader
         }
         catch (Exception e) { sb.Append("error: " + e.Message); }
         return sb.ToString();
+    }
+
+    // Test links only: how much memory the maps hold in total. Drops every mod
+    // map completely (not just its rooms), measures, and is NOT undone (the
+    // test page is reloaded afterwards).
+    [JSExport]
+    internal static Task<string> TestDropAllMaps()
+    {
+        var done = new TaskCompletionSource<string>();
+        var scene = celeste.GetType("Monocle.Engine").GetProperty("Scene", BindingFlags.Static | BindingFlags.Public).GetValue(null);
+        OnGameThread(scene, () =>
+        {
+            try
+            {
+                long before = GC.GetTotalMemory(true) / (1024 * 1024);
+                int n = 0;
+                var areas = (IList)celeste.GetType("Celeste.AreaData").GetField("Areas", BindingFlags.Static | BindingFlags.Public).GetValue(null);
+                foreach (var ad in areas)
+                {
+                    var sid = ad == null ? null : SidOf(ad);
+                    if (sid == null || !sid.Contains('/')) continue;
+                    if (F(ad, "Mode")?.GetValue(ad) is not Array modes) continue;
+                    foreach (var mp in modes) { var f = mp == null ? null : F(mp, "MapData"); if (f?.GetValue(mp) != null) { f.SetValue(mp, null); n++; } }
+                }
+                long after = GC.GetTotalMemory(true) / (1024 * 1024);
+                done.SetResult($"dropped {n} maps completely: {before} -> {after} MB");
+            }
+            catch (Exception e) { done.SetResult("error: " + e.Message); }
+        });
+        return done.Task;
     }
 }

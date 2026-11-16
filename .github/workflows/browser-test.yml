@@ -13,6 +13,9 @@ on:
       stay:
         description: "Seconds to stay in each place"
         default: "120"
+      drop_all:
+        description: "Measure all maps' memory (title / 1 / empty)"
+        default: ""
 
 concurrency:
   group: browser-test
@@ -35,6 +38,7 @@ jobs:
           SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
           RUNS: ${{ inputs.runs }}
           STAY_S: ${{ inputs.stay }}
+          DROP_ALL: ${{ inputs.drop_all }}
         run: xvfb-run -a -s "-screen 0 1280x800x24" node tools/browser_test.mjs
       - uses: actions/upload-artifact@v4
         if: always()

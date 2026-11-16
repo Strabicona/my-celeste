@@ -159,6 +159,12 @@ for (run of RUNS) {
 		const r = { titleMemoryMB: title.scene.managedMB };
 		r.summaryAtTitle = await page.evaluate(async () => await globalThis.__myCeleste.summary());
 		await page.screenshot({ path: `${OUT}/${run}-title.png` });
+		if (process.env.DROP_ALL === "title") {
+			r.dropAll = await page.evaluate(async () => await globalThis.__myCeleste.dropAllMaps());
+			log("all maps dropped at the title:", r.dropAll);
+			results[run] = r;
+			continue;
+		}
 		await enter(LOBBY);
 		r.lobby = await stay("lobby", STAY_S);
 		await enter(MAP_A);
@@ -166,6 +172,10 @@ for (run of RUNS) {
 		await enter(MAP_B);
 		r.mapB = await stay("expert-map", STAY_S);
 		r.summaryAtEnd = await page.evaluate(async () => await globalThis.__myCeleste.summary());
+		if (process.env.DROP_ALL === "1") {
+			r.dropAll = await page.evaluate(async () => await globalThis.__myCeleste.dropAllMaps());
+			log("all maps dropped:", r.dropAll);
+		}
 		results[run] = r;
 	} catch (e) {
 		log("run", run, "failed:", e.message);

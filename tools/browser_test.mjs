@@ -33,7 +33,7 @@ const log = (...a) => {
 
 const browser = await puppeteer.launch({
 	executablePath: process.env.CHROME || "/usr/bin/google-chrome",
-	headless: "new",
+	headless: process.env.HEADLESS === "1" ? "new" : false,
 	userDataDir: "/tmp/chrome-profile",
 	protocolTimeout: 600000,
 	args: [

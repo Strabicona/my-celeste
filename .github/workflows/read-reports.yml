@@ -1,0 +1,29 @@
+name: Read reports
+
+# Reads the game's own error and health reports (meta "errors" / "health" in
+# the saves database) so they can be looked at without the Cloudflare
+# dashboard. Started by hand; the reports are in the run's artifact.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          mkdir -p reports
+          for k in errors health; do
+            npx -y wrangler@4 d1 execute my-celeste-saves --remote --json --command "SELECT value FROM meta WHERE key='$k'" > reports/$k.json
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/

@@ -59,3 +59,17 @@ export async function wipeAndRestart(why: string) {
 	u.searchParams.set("autoplay", "1");
 	location.replace(u.toString());
 }
+
+// test links: run the wipe on purpose, to test it
+if (/^test/.test(new URLSearchParams(location.search).get("mods") || "")) {
+	const t = ((globalThis as any).__myCeleste ||= {});
+	t.wipe = () => wipeAndRestart("test");
+	t.saveFiles = async () => {
+		const out: string[] = [];
+		try {
+			const saves = await (await rootFolder.getDirectoryHandle("Celeste")).getDirectoryHandle("Saves");
+			for await (const [n] of (saves as any).entries()) out.push(n);
+		} catch {}
+		return out.sort();
+	};
+}

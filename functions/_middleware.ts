@@ -330,18 +330,20 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 	// every other computer sees that it lost it and stops sending saves.
 	// POST /api/session {id, device}  -> claims;  GET /api/session -> {id, device, time}
 	if (path[0] === "session") {
+		// the hidden test links use their own slot, so tests never take over
+		const key = new URL(req.url).searchParams.get("scope") === "test" ? "session:test" : "session";
 		if (req.method === "POST") {
 			const body = (await req.json().catch(() => null)) as { id?: string; device?: string } | null;
 			const id = String(body?.id || "").slice(0, 64);
 			if (!id) return json({ error: "no id" }, 400);
 			const value = { id, device: String(body?.device || "").slice(0, 200), time: Date.now() };
 			await db
-				.prepare("INSERT INTO meta (key, value) VALUES ('session', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-				.bind(JSON.stringify(value))
+				.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+				.bind(key, JSON.stringify(value))
 				.run();
 			return json(value);
 		}
-		const row = await db.prepare("SELECT value FROM meta WHERE key = 'session'").first<{ value: string }>();
+		const row = await db.prepare("SELECT value FROM meta WHERE key = ?").bind(key).first<{ value: string }>();
 		return json(row ? JSON.parse(row.value) : {});
 	}
 

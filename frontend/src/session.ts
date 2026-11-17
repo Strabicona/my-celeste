@@ -20,13 +20,15 @@ const device = () => {
 	return os;
 };
 
-// the hidden test links use throwaway saves and must never take over
+// the hidden test links use their own slot ("session:test"), so they never
+// take over from Afonso's real computer
 const testing = /^test/.test(new URLSearchParams(location.search).get("mods") || "");
 
+const SLOT = testing ? "session?scope=test" : "session";
+
 export async function claimPlaying() {
-	if (testing) return;
 	try {
-		await call("session", {
+		await call(SLOT, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ id, device: device() }),
@@ -49,7 +51,7 @@ export function stillPlaying(maxAgeMs = 5000): Promise<boolean> {
 	if (checking) return checking;
 	checking = (async () => {
 		try {
-			const s = await (await call("session")).json();
+			const s = await (await call(SLOT)).json();
 			lastCheck = Date.now();
 			if (s?.id && s.id !== id) {
 				lost = true;
@@ -92,6 +94,13 @@ function onLost(s: { device?: string; time?: number }) {
 	};
 	box.append(text, button);
 	document.body.append(box);
+}
+
+// test links: pretend another computer took over, to test this
+if (testing) {
+	const t = ((globalThis as any).__myCeleste ||= {});
+	t.otherComputer = () =>
+		call(SLOT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: "other-" + Date.now(), device: "test computer" }) });
 }
 
 // check every 30 s while the game runs, so a computer left open notices soon

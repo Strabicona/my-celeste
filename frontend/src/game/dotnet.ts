@@ -510,7 +510,7 @@ function gcParams(): string {
 
 // the real frame counter (see WatchFrames in loader/Celeste.cs)
 export const frameInfo = { fps: -1, worstMs: 0 };
-(globalThis as any).__myCeleste = { frameInfo, sceneInfo: () => sceneInfo };
+(globalThis as any).__myCeleste = Object.assign((globalThis as any).__myCeleste || {}, { frameInfo, sceneInfo: () => sceneInfo });
 
 function monitorFps(): () => void {
 	let stop = false;

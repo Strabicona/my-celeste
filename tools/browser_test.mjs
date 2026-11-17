@@ -166,6 +166,41 @@ for (run of RUNS) {
 			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
 			continue;
 		}
+		// 17 Nov 2026: another computer takes over -> this one stops and offers Play here
+		if (run === "takeover") {
+			const seen2 = consoleLines.length;
+			await page.evaluate(async () => await globalThis.__myCeleste.otherComputer());
+			await waitFor("noticed the other computer", () => consoleLines.slice(seen2).some((l) => l.includes("[session] Celeste was opened on another")), 90);
+			r.overlay = await page.evaluate(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Play here"));
+			await page.screenshot({ path: `${OUT}/takeover-overlay.png` });
+			const seen3 = consoleLines.length;
+			await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent === "Play here").click());
+			await waitFor("took over again and restarted", (st) => st.scene.managedMB > 0 && consoleLines.slice(seen3).some((l) => l.includes("[session] this computer is now")), 1800);
+			r.tookOver = true;
+			log("takeover:", JSON.stringify(r));
+			results[run] = r;
+			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
+			continue;
+		}
+		// 17 Nov 2026: wipe the game files (keeping saves) and start again
+		if (run === "wipe") {
+			r.savesBefore = await page.evaluate(async () => await globalThis.__myCeleste.saveFiles());
+			const seen2 = consoleLines.length;
+			page.evaluate(() => globalThis.__myCeleste.wipe()).catch(() => {});
+			await waitFor("wiped", () => consoleLines.slice(seen2).some((l) => l.startsWith("[wipe]")), 120);
+			r.wipeLine = consoleLines.slice(seen2).find((l) => l.startsWith("[wipe]"));
+			log(r.wipeLine);
+			await sleep(5000);
+			const seen3 = consoleLines.length;
+			await waitFor("title again after the wipe", (st) => st.scene.managedMB > 0 && st.frames.fps > 0 && consoleLines.slice(seen3).some((l) => /^\[slim\] (on:|off|failed|title)/.test(l)), 5400);
+			r.savesAfter = await page.evaluate(async () => await globalThis.__myCeleste.saveFiles());
+			r.savesKept = r.savesBefore.every((n) => r.savesAfter.includes(n));
+			log("wipe:", JSON.stringify(r));
+			await page.screenshot({ path: `${OUT}/wipe-after.png` });
+			results[run] = r;
+			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
+			continue;
+		}
 		if (process.env.DROP_ALL === "title") {
 			r.dropAll = await page.evaluate(async () => await globalThis.__myCeleste.dropAllMaps());
 			log("all maps dropped at the title:", r.dropAll);

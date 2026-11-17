@@ -36,6 +36,7 @@ import {
 } from "./cloudpacks";
 import { linkFor, profile, PROFILES } from "./profile";
 import { report } from "./report";
+import { wipeAndRestart, wipedRecently } from "./wipe";
 import { downloadGame, gameKey, localGameVersion, removeLocalGame, uploadGame } from "./cloudgame";
 import {
 	copySavesFromDroppedFolder,
@@ -329,11 +330,17 @@ const CloudIntro: Component<
 				await new Promise((r) => setTimeout(r, 1500 * attempt));
 				return run(attempt + 1, fresh);
 			}
-			// still busy after the retries: stop using this browser's copy and
-			// download the game again (the save is online, so nothing is lost)
-			if ((e as DOMException)?.name === "InvalidStateError" && !fresh) {
-				this.status = "Getting a fresh copy of the game...";
-				return run(1, true);
+			// still failing after the retries: delete this computer's game files
+			// (keeping the saves) and start again from scratch, once (17 Nov 2026)
+			if ((e as DOMException)?.name === "InvalidStateError") {
+				if (!wipedRecently()) {
+					this.status = "This computer's game files are stuck. Deleting them and downloading again (your saves are kept)...";
+					await wipeAndRestart(String(e));
+					return;
+				}
+				this.status =
+					"Celeste is still open in another tab or window on this computer, so its files cannot be used. Close every other Celeste tab, then reload this page.";
+				return;
 			}
 			// a file came out broken while being saved on this device: fetch the
 			// game again once, from scratch

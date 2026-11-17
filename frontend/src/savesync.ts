@@ -7,6 +7,7 @@
 // - While the page is open, every changed save is sent up a few seconds after
 //   the game finishes writing it. The server keeps the previous version as a
 //   backup, and only the newest 3 backups per save file.
+import { stillPlaying } from "./session";
 import { readAllEntries, rootFolder } from "./fs";
 import { cloudState, CloudSave, getSave, listSaves, LockedError, putSave } from "./cloud";
 import { profile, PROFILES } from "./profile";
@@ -226,6 +227,8 @@ async function syncOnce(urgent = false, keepalive = false) {
 		}
 		cloudState.waiting = pending.length;
 		if (pending.length === 0) return;
+		// another computer took over: never send this one's saves (17 Nov 2026)
+		if (!(await stillPlaying())) return;
 
 		cloudState.syncing = true;
 		for (const [name, file] of pending) {

@@ -27,6 +27,7 @@ import "./keepawake";
 import { report, BUILD } from "./report";
 import { gameFileLooksWhole } from "./fs";
 import { removeLocalGame } from "./cloudgame";
+import { claimPlaying } from "./session";
 
 export const NAME = "webleste";
 
@@ -64,6 +65,7 @@ async function startGame() {
 		return;
 	}
 	await blockBrokenMods();
+	await claimPlaying();
 	play();
 }
 

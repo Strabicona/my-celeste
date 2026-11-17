@@ -325,6 +325,26 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 		}
 	}
 
+	// --- which computer is playing (17 Nov 2026) ---------------------------------
+	// Only one computer at a time may send saves. Starting the game claims it;
+	// every other computer sees that it lost it and stops sending saves.
+	// POST /api/session {id, device}  -> claims;  GET /api/session -> {id, device, time}
+	if (path[0] === "session") {
+		if (req.method === "POST") {
+			const body = (await req.json().catch(() => null)) as { id?: string; device?: string } | null;
+			const id = String(body?.id || "").slice(0, 64);
+			if (!id) return json({ error: "no id" }, 400);
+			const value = { id, device: String(body?.device || "").slice(0, 200), time: Date.now() };
+			await db
+				.prepare("INSERT INTO meta (key, value) VALUES ('session', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+				.bind(JSON.stringify(value))
+				.run();
+			return json(value);
+		}
+		const row = await db.prepare("SELECT value FROM meta WHERE key = 'session'").first<{ value: string }>();
+		return json(row ? JSON.parse(row.value) : {});
+	}
+
 	// --- error reports from the page (so problems on a phone can be read here) ---
 	// POST /api/report  body: {entries: [{time, step, message, device}]}; keeps the last 60
 	if (path[0] === "report" && req.method === "POST") {

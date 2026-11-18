@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
@@ -19,6 +21,12 @@ using System.Threading.Tasks;
 // runs then (it would run out of memory otherwise): that is the safety margin.
 //
 // Every minute it reports how much piled up, so the numbers can be checked.
+//
+// Found by the test on 18 Nov: Celeste itself runs a full clean-up at EVERY
+// death (Level.Reload) and EVERY room change (the transition routine). On a PC
+// that takes ~10 ms; here 120-220 ms, which is the hitch felt at each death and
+// room change. Those calls are now sent to GameWantsCleanup, which only cleans
+// up when enough has piled up (death/room change threshold).
 public static partial class CelesteLoader
 {
     static long breakDueMB = 700, breakPauseMB = 450;
@@ -43,6 +51,7 @@ public static partial class CelesteLoader
                 HookBreak("Celeste.Mod.Everest+Events+Level", "OnEnter", "level start"),
                 HookBreak("Celeste.Mod.Everest+Events+Level", "OnExit", "level end"),
             });
+            hooks += "; " + SkipGameCleanups();
             WatchPileUp();
         }
         return Task.FromResult(on
@@ -85,6 +94,91 @@ public static partial class CelesteLoader
         catch (Exception e) { Console.WriteLine("[gc] clean-up failed: " + e.Message); }
     }
 
+    static readonly List<object> gcHooks = new();
+    static int gameAsked, gameSkipped;
+
+    // the game's own "clean up now" at deaths and room changes
+    public static void GameWantsCleanup()
+    {
+        gameAsked++;
+        if (!breaksOn) { GC.Collect(); return; }
+        long used = GC.GetTotalMemory(false) >> 20;
+        if (used < breakDueMB) { gameSkipped++; return; }
+        var clock = Stopwatch.StartNew();
+        GC.Collect();
+        ourCleanups++;
+        long ms = clock.ElapsedMilliseconds;
+        if (ms > longestCleanupMs) longestCleanupMs = ms;
+        Console.WriteLine($"[gc] clean-up asked by the game: {used} -> {GC.GetTotalMemory(false) >> 20} MB in {ms} ms");
+    }
+
+    static Type FindType(string name) =>
+        AppDomain.CurrentDomain.GetAssemblies().Select(a => { try { return a.GetType(name); } catch { return null; } }).FirstOrDefault(t => t != null);
+
+    // send Celeste's GC.Collect() calls in the level (Reload = death, the
+    // transition routine = room change) to GameWantsCleanup
+    static string SkipGameCleanups()
+    {
+        try
+        {
+            var hookT = FindType("MonoMod.RuntimeDetour.ILHook");
+            var ctxT = FindType("MonoMod.Cil.ILContext");
+            var manipT = ctxT?.GetNestedType("Manipulator");
+            if (hookT == null || manipT == null) return "game clean-ups: no ILHook";
+            var levelT = celeste.GetType("Celeste.Level");
+            var targets = new List<MethodBase>();
+            var reload = levelT.GetMethod("Reload", BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
+            if (reload != null) targets.Add(reload);
+            foreach (var nt in levelT.GetNestedTypes(BindingFlags.NonPublic | BindingFlags.Public))
+                if (nt.Name.Contains("TransitionRoutine"))
+                {
+                    var mn = nt.GetMethod("MoveNext", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    if (mn != null) targets.Add(mn);
+                }
+            var p = Expression.Parameter(ctxT, "il");
+            var manip = Expression.Lambda(manipT, Expression.Call(typeof(CelesteLoader).GetMethod(nameof(RedirectCollect), BindingFlags.Static | BindingFlags.NonPublic), Expression.Convert(p, typeof(object))), p).Compile();
+            var done = new List<string>();
+            foreach (var m in targets)
+            {
+                redirected = 0;
+                try
+                {
+                    gcHooks.Add(Activator.CreateInstance(hookT, m, manip));
+                    done.Add($"{m.DeclaringType.Name}.{m.Name}: {redirected}");
+                }
+                catch (Exception e) { done.Add($"{m.Name} failed: {(e.InnerException ?? e).Message}"); }
+            }
+            return "game clean-ups redirected: " + string.Join(", ", done);
+        }
+        catch (Exception e) { return "game clean-ups: failed " + (e.InnerException ?? e).Message; }
+    }
+
+    static int redirected;
+    static void RedirectCollect(object il)
+    {
+        var instrs = (IEnumerable)il.GetType().GetProperty("Instrs").GetValue(il);
+        object target = null;
+        foreach (var ins in instrs)
+        {
+            var opProp = ins.GetType().GetProperty("Operand");
+            var op = opProp.GetValue(ins);
+            if (op == null) continue;
+            var full = op.GetType().GetProperty("FullName")?.GetValue(op) as string;
+            if (full != "System.Void System.GC::Collect()" && full != "System.Void Celeste.Level::_GCCollect()") continue;
+            target ??= ImportInto(il, typeof(CelesteLoader).GetMethod(nameof(GameWantsCleanup), BindingFlags.Static | BindingFlags.Public));
+            opProp.SetValue(ins, target);
+            redirected++;
+        }
+    }
+
+    static object ImportInto(object il, MethodBase m)
+    {
+        var imp = il.GetType().GetMethod("Import", new[] { typeof(MethodBase) });
+        if (imp != null) return imp.Invoke(il, new object[] { m });
+        var module = il.GetType().GetProperty("Module").GetValue(il);
+        return module.GetType().GetMethod("ImportReference", new[] { typeof(MethodBase) }).Invoke(module, new object[] { m });
+    }
+
     // once a minute: how much piled up, and how many clean-ups ran where
     static void WatchPileUp()
     {
@@ -106,10 +200,10 @@ public static partial class CelesteLoader
                 long piled = (alloc - lastAlloc) >> 20;
                 Console.WriteLine($"[gc] last minute: {piled} MB piled up, memory now {used} MB (highest {peak}), "
                     + $"clean-ups: {ours - lastOurs} at breaks (longest {longestCleanupMs} ms), {Math.Max(own, 0)} during play; "
-                    + $"{d} deaths, {r} room changes"
+                    + $"{d} deaths, {r} room changes, game asked {gameAsked} (skipped {gameSkipped})"
                     + (d + r > 0 ? $", about {piled / (d + r)} MB each" : ""));
                 lastAlloc = alloc; lastFull = full; lastOurs = ours; lastDeaths = deaths; lastRooms = rooms;
-                peak = used; longestCleanupMs = 0;
+                peak = used; longestCleanupMs = 0; gameAsked = 0; gameSkipped = 0;
             }
         });
     }

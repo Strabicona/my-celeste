@@ -21,7 +21,7 @@ using System.Threading.Tasks;
 // Every minute it reports how much piled up, so the numbers can be checked.
 public static partial class CelesteLoader
 {
-    static long breakDueMB = 1536, breakPauseMB = 700;
+    static long breakDueMB = 700, breakPauseMB = 450;
     static bool breaksOn, breaksInstalled;
     static int ourCleanups, deaths, rooms;
     static long longestCleanupMs;

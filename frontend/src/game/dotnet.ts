@@ -504,11 +504,14 @@ export const GC_DEFAULT = "nursery-size=32m";
 // pile up, the soft limit caps the heap), the game cleans up at deaths and
 // room changes instead. Not on a start that has to rewrite the mods' code
 // (empty cache): that start alone needs ~1.4 GB and restarts anyway.
-export const GC_BIG = "nursery-size=256m,default-allowance-ratio=7,soft-heap-limit=2048m";
+// (A 256 MB nursery with a 2 GB limit was tried first: at the title the page
+// already held 3.4 GB of the browser's 4 GB, because startup piles up garbage
+// too and that memory is never handed back. 64 MB x 10 lets ~640 MB pile up.)
+export const GC_BIG = "nursery-size=64m,default-allowance-ratio=10";
 // only on the test links until tested
 export const BREAKS_LIVE = false;
-export const BREAK_DUE_MB = 1536;
-export const BREAK_PAUSE_MB = 700;
+export const BREAK_DUE_MB = 700;
+export const BREAK_PAUSE_MB = 450;
 async function modsCacheFilled(): Promise<boolean> {
 	try {
 		const dir = await recursiveGetDirectory(rootFolder, ["Celeste", "Mods", "Cache"]);

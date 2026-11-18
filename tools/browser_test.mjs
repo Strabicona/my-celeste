@@ -138,6 +138,8 @@ async function dieLoop(label, seconds) {
 	const t0 = Date.now();
 	const stalls = [];
 	while (Date.now() - t0 < seconds * 1000) {
+		// a game key, so the idle pause does not pause the level
+		await page.keyboard.press("s").catch(() => {});
 		const r = await page.evaluate(async () => await globalThis.__myCeleste.die()).catch((e) => e.message);
 		if (r === "ok") deaths++;
 		for (let i = 0; i < 3; i++) {

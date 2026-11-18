@@ -241,7 +241,7 @@ async function loadRuntime(url: string) {
 		// memory clean-ups: a bigger nursery (default 4 MB) means far fewer
 		// small clean-ups, and fewer short-lived objects pushed into the big
 		// heap, where they force the full clean-ups that freeze the game
-		.withEnvironmentVariable("MONO_GC_PARAMS", gcParams())
+		.withEnvironmentVariable("MONO_GC_PARAMS", await gcParams())
 		.withRuntimeOptions([
 			// jit functions quickly and jit more functions
 			`--jiterpreter-minimum-trace-hit-count=${500}`,
@@ -499,12 +499,41 @@ const SEAMLESSCOUNT = 5;
 // Memory clean-up settings. On the hidden test links only, ?gc=... replaces
 // them, so settings can be compared without a new build.
 export const GC_DEFAULT = "nursery-size=32m";
-function gcParams(): string {
+// Clean-ups only at breaks (18 Nov 2026, see loader/Breaks.cs): far more room
+// before the runtime cleans up by itself (nursery x ratio sets how much may
+// pile up, the soft limit caps the heap), the game cleans up at deaths and
+// room changes instead. Not on a start that has to rewrite the mods' code
+// (empty cache): that start alone needs ~1.4 GB and restarts anyway.
+export const GC_BIG = "nursery-size=256m,default-allowance-ratio=7,soft-heap-limit=2048m";
+// only on the test links until tested
+export const BREAKS_LIVE = false;
+export const BREAK_DUE_MB = 1536;
+export const BREAK_PAUSE_MB = 700;
+async function modsCacheFilled(): Promise<boolean> {
+	try {
+		const dir = await recursiveGetDirectory(rootFolder, ["Celeste", "Mods", "Cache"]);
+		for await (const [name] of (dir as any).entries()) if (String(name).endsWith(".dll")) return true;
+	} catch {}
+	return false;
+}
+async function hasMods(): Promise<boolean> {
+	try {
+		const dir = await recursiveGetDirectory(rootFolder, ["Celeste", "Mods"]);
+		for await (const [name] of (dir as any).entries()) if (String(name).endsWith(".zip")) return true;
+	} catch {}
+	return false;
+}
+export const gcPlan = { big: false, why: "" };
+async function gcParams(): Promise<string> {
 	const q = new URLSearchParams(location.search);
 	const testing = /^test/.test(q.get("mods") || "");
 	const p = testing ? q.get("gc") : null;
-	const v = p && /^[a-z0-9=,.\-]+$/.test(p) ? p : GC_DEFAULT;
-	console.log("[gc] settings: " + v);
+	const mods = await hasMods();
+	const warm = !mods || (await modsCacheFilled());
+	gcPlan.big = (BREAKS_LIVE || testing) && q.get("breaks") !== "0" && warm;
+	gcPlan.why = !mods ? "no mods" : warm ? "mods cache filled" : "mods cache empty (first start)";
+	const v = p && /^[a-z0-9=,.\-]+$/.test(p) ? p : gcPlan.big ? GC_BIG : GC_DEFAULT;
+	console.log(`[gc] settings: ${v} (${gcPlan.why})`);
 	return v;
 }
 
@@ -658,6 +687,20 @@ function startSlimMaps() {
 	t.relinker = (clear: boolean) => exports.CelesteLoader.TestRelinker(clear);
 }
 
+// clean-ups at deaths and room changes (loader/Breaks.cs). Test links may set
+// ?due=MB and ?pausedue=MB.
+function startBreaks() {
+	const q = new URLSearchParams(location.search);
+	const testing = /^test/.test(q.get("mods") || "");
+	if (!exports.CelesteLoader.StartBreaks) return;
+	const num = (k: string, d: number) => (testing && Number(q.get(k)) > 0 ? Number(q.get(k)) : d);
+	exports.CelesteLoader.StartBreaks(gcPlan.big, num("due", BREAK_DUE_MB), num("pausedue", BREAK_PAUSE_MB)).then(
+		(r: string) => console.log("[gc] breaks " + r),
+		(e: unknown) => console.warn("[gc] breaks could not start:", e)
+	);
+	if (testing) Object.assign(((globalThis as any).__myCeleste ||= {}), { die: () => exports.CelesteLoader.TestDie(), wasmMB: () => wasmMemoryMB() });
+}
+
 export async function play() {
 	event("play-begin");
 	gameState.playing = true;
@@ -672,6 +715,7 @@ export async function play() {
 
 	await exports.CelesteLoader.Init(false);
 	startSlimMaps();
+	startBreaks();
 
 	// run some frames for seamless transition
 	for (let i = 0; i < SEAMLESSCOUNT; i++) {

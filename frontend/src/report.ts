@@ -79,6 +79,12 @@ for (const level of ["log", "warn", "info"] as const) {
 		orig(...args);
 		try {
 			const line = args.map(text).join(" ");
+			// the once-a-minute memory lines go with the health samples, so they
+			// never push errors out of the list
+			if (line.startsWith("[gc] last minute") || line.startsWith("[gc] clean-up at")) {
+				report("health", line);
+				return;
+			}
 			if ((ERRORISH.test(line) && !line.startsWith("[saves]")) || line.startsWith("[away]") || line.startsWith("[frames]") || line.startsWith("[autosave]") || line.startsWith("[mods]") || line.startsWith("[gc]") || line.startsWith("[slim]") || line.startsWith("[session]") || line.startsWith("[wipe]") || line.startsWith("[test]"))
 				report("console." + level, line);
 		} catch {}

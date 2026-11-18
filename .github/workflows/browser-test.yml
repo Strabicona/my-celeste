@@ -16,6 +16,9 @@ on:
       relinker:
         description: "Measure Everest's code-rewriter caches (1 / empty)"
         default: ""
+      die_s:
+        description: "Seconds of dying in a map (runs measure / breaks)"
+        default: "480"
       drop_all:
         description: "Measure all maps' memory (title / 1 / empty)"
         default: ""
@@ -43,6 +46,7 @@ jobs:
           STAY_S: ${{ inputs.stay }}
           DROP_ALL: ${{ inputs.drop_all }}
           RELINKER: ${{ inputs.relinker }}
+          DIE_S: ${{ inputs.die_s }}
         run: xvfb-run -a -s "-screen 0 1280x800x24" node tools/browser_test.mjs
       - uses: actions/upload-artifact@v4
         if: always()

@@ -130,6 +130,34 @@ async function stay(label, seconds) {
 	return r;
 }
 
+// 18 Nov 2026: die every few seconds in a map, to see how fast memory piles
+// up and where the clean-ups happen (loader/Breaks.cs)
+async function dieLoop(label, seconds) {
+	const seen = consoleLines.length;
+	let worst = 0, lowFps = 999, wasmMax = 0, memMax = 0, deaths = 0;
+	const t0 = Date.now();
+	const stalls = [];
+	while (Date.now() - t0 < seconds * 1000) {
+		const r = await page.evaluate(async () => await globalThis.__myCeleste.die()).catch((e) => e.message);
+		if (r === "ok") deaths++;
+		for (let i = 0; i < 3; i++) {
+			await sleep(1000);
+			const s = await state();
+			const w = await page.evaluate(() => globalThis.__myCeleste.wasmMB()).catch(() => 0);
+			wasmMax = Math.max(wasmMax, w);
+			memMax = Math.max(memMax, s.scene.managedMB);
+			if (s.frames.worstMs > 100) stalls.push(s.frames.worstMs);
+			worst = Math.max(worst, s.frames.worstMs);
+			if (s.frames.fps > 0) lowFps = Math.min(lowFps, s.frames.fps);
+		}
+	}
+	const gc = consoleLines.slice(seen).filter((l) => l.startsWith("[gc]"));
+	const r = { label, seconds, deaths, highestMemoryMB: memMax, highestWasmMB: wasmMax, longestFrameMs: worst, lowestFps: lowFps, secondsWithStallOver100ms: stalls.length, gc };
+	log("measured", JSON.stringify(r, null, 1));
+	await page.screenshot({ path: `${OUT}/${run}-${label}.png` });
+	return r;
+}
+
 async function enter(sid) {
 	log("entering", sid);
 	const r = await page.evaluate(async (s) => await globalThis.__myCeleste.load(s), sid);
@@ -142,7 +170,7 @@ async function enter(sid) {
 const results = {};
 let run = "";
 for (run of RUNS) {
-	const url = `${BASE}/?mods=testsj&autoplay=1${run === "off" ? "&slim=0" : ""}`;
+	const url = `${BASE}/?mods=testsj&autoplay=1${run === "off" ? "&slim=0" : ""}${run === "measure" ? "&breaks=0" : ""}`;
 	log("=== run", run, url);
 	await page.goto(url, { waitUntil: "domcontentloaded" });
 	try {
@@ -162,6 +190,16 @@ for (run of RUNS) {
 			log("relinker caches:\n" + r.relinkerList);
 			r.relinkerClear = await page.evaluate(async () => await globalThis.__myCeleste.relinker(true));
 			log("relinker cleared:\n" + r.relinkerClear);
+			results[run] = r;
+			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
+			continue;
+		}
+		// 18 Nov 2026: clean-ups at breaks: measure ("measure" = old settings)
+		if (run === "measure" || run === "breaks") {
+			r.gcSettings = consoleLines.filter((l) => l.startsWith("[gc] settings") || l.startsWith("[gc] breaks")).slice(-2);
+			await enter(MAP_A);
+			r.dying = await dieLoop("dying", Number(process.env.DIE_S || 480));
+			r.standing = await stay("standing", 60);
 			results[run] = r;
 			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
 			continue;

@@ -137,9 +137,18 @@ async function dieLoop(label, seconds) {
 	let worst = 0, lowFps = 999, wasmMax = 0, memMax = 0, deaths = 0;
 	const t0 = Date.now();
 	const stalls = [];
+	// game keys only count while the page has focus
+	await page.bringToFront().catch(() => {});
+	await page.mouse.click(640, 400).catch(() => {});
+	log("page has focus:", await page.evaluate(() => document.hasFocus()));
 	while (Date.now() - t0 < seconds * 1000) {
-		// a game key, so the idle pause does not pause the level
+		// a game key, so the idle pause does not pause the level; leave the
+		// pause menu if it is open
 		await page.keyboard.press("s").catch(() => {});
+		if ((await state())?.scene?.state === 2) {
+			await page.keyboard.press("Escape").catch(() => {});
+			await sleep(800);
+		}
 		const r = await page.evaluate(async () => await globalThis.__myCeleste.die()).catch((e) => e.message);
 		if (r === "ok") deaths++;
 		for (let i = 0; i < 3; i++) {

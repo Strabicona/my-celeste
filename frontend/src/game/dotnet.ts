@@ -508,8 +508,8 @@ export const GC_DEFAULT = "nursery-size=32m";
 // already held 3.4 GB of the browser's 4 GB, because startup piles up garbage
 // too and that memory is never handed back. 64 MB x 10 lets ~640 MB pile up.)
 export const GC_BIG = "nursery-size=64m,default-allowance-ratio=10";
-// only on the test links until tested
-export const BREAKS_LIVE = false;
+// live since 18 Nov 2026 (test run 44345418925: 137 deaths, 0 clean-ups during play)
+export const BREAKS_LIVE = true;
 export const BREAK_DUE_MB = 700;
 export const BREAK_PAUSE_MB = 450;
 async function modsCacheFilled(): Promise<boolean> {

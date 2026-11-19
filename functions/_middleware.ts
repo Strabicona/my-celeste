@@ -358,7 +358,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 		// health samples (once a minute while playing) go in their own list, so
 		// they never push errors out
 		for (const [key, keep, entries] of [
-			["errors", 60, incoming.filter((e: any) => e?.step !== "health")],
+			["errors", 300, incoming.filter((e: any) => e?.step !== "health")],
 			["health", 240, incoming.filter((e: any) => e?.step === "health")],
 		] as [string, number, unknown[]][]) {
 			if (!entries.length) continue;

@@ -690,6 +690,12 @@ function startSlimMaps() {
 	t.relinker = (clear: boolean) => exports.CelesteLoader.TestRelinker(clear);
 }
 
+// the menu's "Clean memory now" (and F8)
+export async function cleanMemoryNow(): Promise<string> {
+	if (!exports?.CelesteLoader?.CleanNow) return "not available yet";
+	return exports.CelesteLoader.CleanNow();
+}
+
 // clean-ups at deaths and room changes (loader/Breaks.cs). Test links may set
 // ?due=MB and ?pausedue=MB.
 function startBreaks() {
@@ -701,7 +707,7 @@ function startBreaks() {
 		(r: string) => console.log("[gc] breaks " + r),
 		(e: unknown) => console.warn("[gc] breaks could not start:", e)
 	);
-	if (testing) Object.assign(((globalThis as any).__myCeleste ||= {}), { die: () => exports.CelesteLoader.TestDie(), wasmMB: () => wasmMemoryMB() });
+	if (testing) Object.assign(((globalThis as any).__myCeleste ||= {}), { die: () => exports.CelesteLoader.TestDie(), wasmMB: () => wasmMemoryMB(), cleanNow: () => exports.CelesteLoader.CleanNow() });
 }
 
 export async function play() {

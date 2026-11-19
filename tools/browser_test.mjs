@@ -210,6 +210,8 @@ for (run of RUNS) {
 			r.gcSettings = consoleLines.filter((l) => l.startsWith("[gc] settings") || l.startsWith("[gc] breaks")).slice(-2);
 			await enter(MAP_A);
 			r.dying = await dieLoop("dying", Number(process.env.DIE_S || 480));
+			r.cleanNow = await page.evaluate(async () => await globalThis.__myCeleste.cleanNow()).catch((e) => "failed: " + e.message);
+			log("clean now:", r.cleanNow);
 			r.standing = await stay("standing", 60);
 			results[run] = r;
 			fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));

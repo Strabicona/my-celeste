@@ -113,13 +113,22 @@ export async function putSave(
 	keepalive = false
 ): Promise<CloudSave> {
 	const body = toBase64(data);
-	const res = await call("saves/" + encodeURIComponent(name), {
-		method: "PUT",
-		headers: { "Content-Type": "text/plain" },
-		body,
-		keepalive: keepalive && body.length < 60_000,
-	});
-	return res.json();
+	// retried like the game pieces: one dropped request no longer means a
+	// failed save (19 Nov 2026)
+	for (let attempt = 0; ; attempt++) {
+		try {
+			const res = await call("saves/" + encodeURIComponent(name), {
+				method: "PUT",
+				headers: { "Content-Type": "text/plain" },
+				body,
+				keepalive: keepalive && body.length < 60_000,
+			});
+			return await res.json();
+		} catch (e) {
+			if (e instanceof LockedError || keepalive || attempt >= 3) throw e;
+			await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+		}
+	}
 }
 
 // --- game archive ------------------------------------------------------------

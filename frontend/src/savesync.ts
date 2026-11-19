@@ -202,6 +202,7 @@ export async function pullSaves(): Promise<void> {
 }
 
 let running = false;
+let failures = 0;
 
 const stats = { lastMs: 0, files: 0 };
 export const syncStats = () => ({ ...stats });
@@ -243,12 +244,15 @@ async function syncOnce(urgent = false, keepalive = false) {
 			minute: "2-digit",
 		});
 		cloudState.error = "";
+		failures = 0;
 	} catch (e) {
-		console.error("[saves] sync failed:", e);
-		cloudState.error =
-			e instanceof LockedError
-				? "Password needed again, reload the page"
-				: String(e);
+		failures++;
+		console.error(`[saves] sync failed (${failures} in a row):`, e);
+		// a single failure is retried in 5 s; the red warning only shows when
+		// it keeps failing (or the password is needed, which never fixes itself)
+		if (e instanceof LockedError) cloudState.error = "Password needed again, reload the page";
+		else if (failures >= 2) cloudState.error = String(e);
+		if (failures === 1) setTimeout(() => syncOnce(true), 5000);
 	} finally {
 		cloudState.syncing = false;
 		stats.lastMs = Math.round(performance.now() - t0);

@@ -9,6 +9,7 @@ import { cloudState } from "./cloud";
 import { importSaveFiles, nudgeSaveSync, syncNow } from "./savesync";
 import { gameEvents } from "./game/dotnet";
 import { setupRelaunch } from "./relaunch";
+import { cleanNow } from "./cleanup";
 import { Settings } from "./settings";
 
 import iconPlayArrow from "@ktibow/iconset-material-symbols/play-arrow";
@@ -510,6 +511,18 @@ const TopBar: Component<
 						>
 							<Icon icon={iconFullscreen} />
 							<span>Fullscreen</span>
+						</Button>
+						<Button
+							on:click={() => {
+								close();
+								cleanNow();
+							}}
+							icon="none"
+							type="normal"
+							disabled={use(gameState.playing, (x) => !x)}
+							title="Clean the game's memory now (also F8)"
+						>
+							<span>Clean memory (F8)</span>
 						</Button>
 					</div>
 				</section>

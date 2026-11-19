@@ -47,8 +47,15 @@ async function flush() {
 	}
 }
 
+// save problems have their own, larger budget: the general one (40) is used up
+// by the startup messages, which hid every "sync failed" (found 19 Nov 2026)
+let savesSent = 0;
 export function report(step: string, e: unknown) {
-	if (step !== "health") {
+	const important = step === "saves" || /\[saves\]|sync failed/.test(text(e).slice(0, 200));
+	if (important) {
+		if (savesSent >= 300) return;
+		savesSent++;
+	} else if (step !== "health") {
 		if (sent >= MAX) return;
 		sent++;
 	}
@@ -79,6 +86,8 @@ for (const level of ["log", "warn", "info"] as const) {
 		orig(...args);
 		try {
 			const line = args.map(text).join(" ");
+			// clean-ups show a small note on screen (cleanup.ts)
+			if (line.startsWith("[gc] clean-up")) window.dispatchEvent(new CustomEvent("my-celeste-cleanup", { detail: line }));
 			// the once-a-minute memory lines go with the health samples, so they
 			// never push errors out of the list
 			if (line.startsWith("[gc] last minute") || line.startsWith("[gc] clean-up at")) {

@@ -300,6 +300,7 @@ public static partial class CelesteLoader
                         else if (value != lastValue)
                         {
                             frames.Enqueue((now, now - lastFrameAt));
+                            if (now - lastFrameAt > 50) SlowFrame(now - lastFrameAt);
                             lastFrameAt = now;
                         }
                         lastValue = value;

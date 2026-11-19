@@ -50,6 +50,7 @@ public static partial class CelesteLoader
                 HookBreak("Celeste.Mod.Everest+Events+Level", "OnPause", "pause"),
                 HookBreak("Celeste.Mod.Everest+Events+Level", "OnEnter", "level start"),
                 HookBreak("Celeste.Mod.Everest+Events+Level", "OnExit", "level end"),
+                HookBreak("Celeste.Mod.Everest+Events+Level", "OnLoadLevel", "room loaded"),
             });
             hooks += "; " + SkipGameCleanups();
             WatchPileUp();
@@ -76,7 +77,8 @@ public static partial class CelesteLoader
     // runs on the game's own thread, inside the death / room change / pause
     static void AtBreak(string why)
     {
-        if (why == "death") deaths++;
+        if (why == "death") { deaths++; lastDeathMs = NowMs; }
+        if (why == "room loaded") { RoomLoaded(); return; }
         if (why == "room") rooms++;
         if (!breaksOn) return;
         try
@@ -94,6 +96,66 @@ public static partial class CelesteLoader
         catch (Exception e) { Console.WriteLine("[gc] clean-up failed: " + e.Message); }
     }
 
+    static readonly Stopwatch appClock = Stopwatch.StartNew();
+    static double lastDeathMs = -1e9, loadStartMs = -1;
+    static int loads, slowFrames, slowAfterDeath;
+    static double loadSumMs, loadMaxMs, slowestAfterDeath;
+    internal static double NowMs => appClock.Elapsed.TotalMilliseconds;
+
+    // called by WatchFrames for every frame that took over 50 ms
+    internal static void SlowFrame(double gapMs)
+    {
+        slowFrames++;
+        if (NowMs - lastDeathMs < 4000)
+        {
+            slowAfterDeath++;
+            if (gapMs > slowestAfterDeath) slowestAfterDeath = gapMs;
+        }
+    }
+
+    // Everest Level.OnLoadLevel: the room finished loading (after a death or a
+    // room change); timed from the game's clean-up call just before it
+    static void RoomLoaded()
+    {
+        if (loadStartMs < 0) return;
+        double ms = NowMs - loadStartMs;
+        loadStartMs = -1;
+        loads++;
+        loadSumMs += ms;
+        if (ms > loadMaxMs) loadMaxMs = ms;
+    }
+
+    // the menu's "Clean memory now" button (and F8): runs at the end of the
+    // current frame, so the game simply stops for the time it takes
+    [JSExport]
+    internal static Task<string> CleanNow()
+    {
+        var done = new TaskCompletionSource<string>();
+        Action run = () =>
+        {
+            try
+            {
+                long used = GC.GetTotalMemory(false) >> 20;
+                var clock = Stopwatch.StartNew();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                ourCleanups++;
+                long ms = clock.ElapsedMilliseconds;
+                string r = $"{used} -> {GC.GetTotalMemory(false) >> 20} MB in {ms} ms";
+                Console.WriteLine("[gc] clean-up asked from the menu: " + r);
+                done.TrySetResult(r);
+            }
+            catch (Exception e) { done.TrySetResult("failed: " + e.Message); }
+        };
+        try
+        {
+            var scene = celeste.GetType("Monocle.Engine").GetProperty("Scene", BindingFlags.Static | BindingFlags.Public).GetValue(null);
+            if (scene != null) OnGameThread(scene, run); else run();
+        }
+        catch { run(); }
+        return done.Task;
+    }
+
     static readonly List<object> gcHooks = new();
     static int gameAsked, gameSkipped;
 
@@ -101,6 +163,7 @@ public static partial class CelesteLoader
     public static void GameWantsCleanup()
     {
         gameAsked++;
+        loadStartMs = NowMs;
         if (!breaksOn) { GC.Collect(); return; }
         long used = GC.GetTotalMemory(false) >> 20;
         if (used < breakDueMB) { gameSkipped++; return; }
@@ -201,7 +264,10 @@ public static partial class CelesteLoader
                 Console.WriteLine($"[gc] last minute: {piled} MB piled up, memory now {used} MB (highest {peak}), "
                     + $"clean-ups: {ours - lastOurs} at breaks (longest {longestCleanupMs} ms), {Math.Max(own, 0)} during play; "
                     + $"{d} deaths, {r} room changes, game asked {gameAsked} (skipped {gameSkipped})"
-                    + (d + r > 0 ? $", about {piled / (d + r)} MB each" : ""));
+                    + (d + r > 0 ? $", about {piled / (d + r)} MB each" : "")
+                    + (loads > 0 ? $"; room loads {loads}, average {loadSumMs / loads:0} ms, longest {loadMaxMs:0} ms" : "")
+                    + $"; frames over 50 ms: {slowFrames} ({slowAfterDeath} within 4 s after a death, longest {slowestAfterDeath:0} ms)");
+                loads = 0; loadSumMs = 0; loadMaxMs = 0; slowFrames = 0; slowAfterDeath = 0; slowestAfterDeath = 0;
                 lastAlloc = alloc; lastFull = full; lastOurs = ours; lastDeaths = deaths; lastRooms = rooms;
                 peak = used; longestCleanupMs = 0; gameAsked = 0; gameSkipped = 0;
             }
